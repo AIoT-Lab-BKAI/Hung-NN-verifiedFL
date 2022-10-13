@@ -1,4 +1,4 @@
-from utils.train_smt import train, test
+from utils.train_smt import test, print_cfmtx, NumpyEncoder
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.dataloader import CustomDataset
@@ -9,26 +9,26 @@ import torch, argparse, json, os, numpy as np, copy
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-class NumpyEncoder(json.JSONEncoder):
-    """ Special json encoder for numpy types """
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
-    
-def print_cfmtx(mtx):
-    for i in range(mtx.shape[0]):
-        for j in range(mtx.shape[1]):
-            if i == j:
-                print(f"\033[48;5;225m{mtx[i,j]:>.3f}\033[0;0m", end="  ")
-            else:
-                print(f"{mtx[i,j]:>.3f}", end="  ")
-        print()
-    return
+def train(dataloader, model, loss_fn, optimizer):   
+    model = model.cuda()
+    model.train()
+    losses = []
+        
+    for batch, (X, y) in enumerate(dataloader):
+        X, y = X.to(device), y.to(device)
+
+        # Compute prediction error
+        pred = model(X)
+        loss = loss_fn(pred, y)
+        
+        # Backpropagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        losses.append(loss.item())
+        
+    return losses
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -81,7 +81,7 @@ if __name__ == "__main__":
             
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, fct=0.0)))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
             client_models.append(local_model)

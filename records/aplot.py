@@ -5,7 +5,7 @@ import os
 import json
 from pathlib import Path
 
-folder = "scaffold"
+folder = "proposal"
 
 global_cfmtx = json.load(open(f"./{folder}/global_cfmtx_record.json", "r"))
 local_cfmtx = json.load(open(f"./{folder}/local_cfmtx_bfag_record.json", "r"))

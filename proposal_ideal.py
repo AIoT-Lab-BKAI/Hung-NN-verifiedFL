@@ -1,10 +1,12 @@
-from utils.train_smt import gen_representation, train, test_ideal, test
+from fedavg import train
+from utils.train_smt import gen_representation, test
 from utils.aggregate import aggregate, check_representations
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.dataloader import CustomDataset
 from torchvision import datasets, transforms
 from utils.model import NeuralNetwork
+from torchmetrics import ConfusionMatrix
 
 import torch, argparse, json, os, numpy as np, copy
 
@@ -38,7 +40,55 @@ def print_cfmtx(mtx):
                 print(f"{mtx[i,j]:>.3f}", end="  ")
         print()
     return
+
+
+def test_ideal(model, testing_data):
+    test_loader = DataLoader(testing_data, batch_size=32, shuffle=True, drop_last=False)
+    model.cuda()
+
+    loss_fn = torch.nn.CrossEntropyLoss()
+    device = "cuda"
+
+    size = len(test_loader.dataset)
+    num_batches = len(test_loader)
+    model.eval()
+    test_loss, correct = 0, 0
+    confmat = ConfusionMatrix(num_classes=10).to(device)
+    cmtx = 0
     
+    label_list = [[1,2],[3,4],[5,6],[7,8],[9,0]]
+    def recoord(labels):
+        coord = []
+        for label in labels:
+            for idx in range(len(label_list)):
+                if label in label_list[idx]:
+                    coord.append(idx)
+        true_psi = torch.zeros([len(labels), len(label_list)])
+        """
+        coord = [0,1,2,1,1,3]
+        """
+        for i in range(len(coord)):
+            true_psi[i][coord[i]] = 1
+        return true_psi
+
+    with torch.no_grad():
+        for X, y in test_loader:
+            X, y = X.to(device), y.to(device)
+            true_psi = recoord(y).to(device)
+            pred = model(X, true_psi)
+            test_loss += loss_fn(pred, y).item()
+            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+            cmtx += confmat(pred, y)
+
+    test_loss /= num_batches
+    correct /= size
+
+    acc, cfmtx =  correct, cmtx.cpu().numpy()
+    down = np.sum(cfmtx, axis=1, keepdims=True)
+    down[down == 0] = 1
+    cfmtx = cfmtx/down
+    return cfmtx
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=4)
@@ -94,7 +144,7 @@ if __name__ == "__main__":
 
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, fct=0.0)))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
             client_models.append(local_model)

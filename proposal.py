@@ -1,10 +1,11 @@
-from utils.train_smt import gen_representation, train, test
+from utils.train_smt import gen_representation, test, batch_similarity, print_cfmtx, NumpyEncoder
 from utils.aggregate import aggregate, check_representations
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.dataloader import CustomDataset
 from torchvision import datasets, transforms
 from utils.model import NeuralNetwork
+from copy import deepcopy
 
 import torch, argparse, json, os, numpy as np, copy
 
@@ -18,27 +19,34 @@ def create_mask(dim, dataset):
         mask[label, label] = 1
     return mask
 
-class NumpyEncoder(json.JSONEncoder):
-    """ Special json encoder for numpy types """
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
+
+def train(dataloader, model, loss_fn, optimizer, fct=0.01):
+    base_model = deepcopy(model).cuda()
+    base_model.freeze_grad()
     
-def print_cfmtx(mtx):
-    for i in range(mtx.shape[0]):
-        for j in range(mtx.shape[1]):
-            if i == j:
-                print(f"\033[48;5;225m{mtx[i,j]:>.3f}\033[0;0m", end="  ")
-            else:
-                print(f"{mtx[i,j]:>.3f}", end="  ")
-        print()
-    return
-    
+    model = model.cuda()
+    model.train()
+    losses = []
+        
+    for batch, (X, y) in enumerate(dataloader):
+        X, y = X.to(device), y.to(device)
+
+        # Compute prediction error
+        pred, rep = model.pred_and_rep(X)
+        _, rep_base = base_model.pred_and_rep(X)
+        
+        sim = batch_similarity(rep, rep_base)
+        loss = loss_fn(pred, y) + fct * torch.sum(sim - 2 * torch.diag(sim)) / (X.shape[0] **2)
+        
+        # Backpropagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        losses.append(loss.item())
+        
+    return losses
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=4)
@@ -51,14 +59,14 @@ if __name__ == "__main__":
     training_data = datasets.MNIST(
         root="./data",
         train=True,
-        download=False,
+        download=True,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
     )
     
     testing_data = datasets.MNIST(
         root="data",
         train=False,
-        download=False,
+        download=True,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
     )
     
@@ -94,7 +102,7 @@ if __name__ == "__main__":
 
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, fct=0.01)))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, fct=0.1)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
             client_models.append(local_model)

@@ -1,4 +1,4 @@
-from utils.train_smt import test
+from utils.train_smt import test, print_cfmtx, NumpyEncoder
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.dataloader import CustomDataset
@@ -8,27 +8,6 @@ from utils import fmodule
 import torch, argparse, json, os, numpy as np, copy
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-class NumpyEncoder(json.JSONEncoder):
-    """ Special json encoder for numpy types """
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
-    
-def print_cfmtx(mtx):
-    for i in range(mtx.shape[0]):
-        for j in range(mtx.shape[1]):
-            if i == j:
-                print(f"\033[48;5;225m{mtx[i,j]:>.3f}\033[0;0m", end="  ")
-            else:
-                print(f"{mtx[i,j]:>.3f}", end="  ")
-        print()
-    return
 
 def train(train_dataloader, local_model, loss_fn, optimizer, cg, c):
     losses = []
