@@ -9,33 +9,40 @@ import torch, argparse, json, os, numpy as np, copy
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def train(dataloader, model, loss_fn, optimizer, mu=0.1): 
-    base_model = copy.deepcopy(model).cuda()
-    base_model.freeze_grad()
-    
-    model = model.cuda()
+def train(dataloader, model, loss_fn, optimizer, gradL, alpha=0.5):  
+    src_model = copy.deepcopy(model).to(device)
+    src_model.freeze_grad()
+    model = model.to(device)
     model.train()
+         
     losses = []
         
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
 
-        loss_proximal = 0
-        for pm, ps in zip(model.parameters(), base_model.parameters()):
-            loss_proximal += torch.sum(torch.pow(pm-ps,2))
-                    
         # Compute prediction error
         pred = model(X)
-        loss = loss_fn(pred, y) + 0.5 * mu * loss_proximal
-        
+        l1 = loss_fn(pred, y)
+        l2 = 0
+        l3 = 0
+        for pgl, pm, ps in zip(gradL.parameters(), model.parameters(), src_model.parameters()):
+            l2 += torch.dot(pgl.view(-1), pm.view(-1))
+            l3 += torch.sum(torch.pow(pm-ps,2))
+        loss = l1 - l2 + 0.5 * alpha * l3
         # Backpropagation
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
         losses.append(loss.item())
-        
+    
+    gradL = gradL - alpha * (model - src_model)
     return losses
+
+def aggregate(current_model, models, h, alpha=0.5, total_clients=5):
+    h = h - alpha * (1.0 / total_clients * fmodule._model_sum(models) - current_model)
+    new_model = fmodule._model_average(models) - 1.0 / alpha * h
+    return new_model
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -71,6 +78,10 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     
+    
+    server_h = global_model.zeros_like()
+    clients_gradLs = [global_model.zeros_like() for client_id in client_id_list]
+    
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         client_models = []
@@ -88,7 +99,7 @@ if __name__ == "__main__":
             
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer)))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, gradL=clients_gradLs[client_id])))
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
             client_models.append(local_model)
@@ -100,7 +111,7 @@ if __name__ == "__main__":
             
         print("    # Server aggregating... ", end="")
         # Aggregation
-        global_model = fmodule._model_sum([model * pk for model, pk in zip(client_models, impact_factors)])
+        global_model = aggregate(global_model, client_models, server_h, total_clients=len(client_id_list))
         print("Done!")
         
         print("    # Server testing... ", end="")
@@ -110,9 +121,9 @@ if __name__ == "__main__":
         np.set_printoptions(precision=2, suppress=True)
         print_cfmtx(cfmtx)
         
-        if not Path("records/fedprox").exists():
-            os.makedirs("records/fedprox")
+        if not Path("records/feddyn").exists():
+            os.makedirs("records/feddyn")
         
-        json.dump(local_loss_record,        open("records/fedprox/local_loss_record.json", "w"),         cls=NumpyEncoder)
-        json.dump(local_cfmtx_bfag_record,  open("records/fedprox/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
-        json.dump(global_cfmtx_record,      open("records/fedprox/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+        json.dump(local_loss_record,        open("records/feddyn/local_loss_record.json", "w"),         cls=NumpyEncoder)
+        json.dump(local_cfmtx_bfag_record,  open("records/feddyn/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
+        json.dump(global_cfmtx_record,      open("records/feddyn/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)

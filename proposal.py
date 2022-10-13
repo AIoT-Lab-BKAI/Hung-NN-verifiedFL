@@ -36,7 +36,7 @@ def train(dataloader, model, loss_fn, optimizer, fct=0.01):
         _, rep_base = base_model.pred_and_rep(X)
         
         sim = batch_similarity(rep, rep_base)
-        loss = loss_fn(pred, y) + fct * torch.sum(sim - 2 * torch.diag(sim)) / (X.shape[0] **2)
+        loss = loss_fn(pred, y) + fct * torch.sum(sim - torch.diag(sim)) / (X.shape[0] **2)
         
         # Backpropagation
         optimizer.zero_grad()
