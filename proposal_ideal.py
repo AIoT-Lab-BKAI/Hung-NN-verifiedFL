@@ -1,11 +1,11 @@
 from fedavg import train
-from utils.train_smt import gen_representation, test
+from utils.train_smt import train_representation, test
 from utils.aggregate import aggregate, check_representations
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.dataloader import CustomDataset
 from torchvision import datasets, transforms
-from utils.model import NeuralNetwork
+from utils.model import NeuralNetwork, DNN
 from torchmetrics import ConfusionMatrix
 
 import torch, argparse, json, os, numpy as np, copy
@@ -115,7 +115,8 @@ if __name__ == "__main__":
     client_id_list = [0,1,2,3,4]
     clients_dataset = [CustomDataset(training_data, json.load(open(f"./jsons/client{client_id}.json", 'r'))) for client_id in client_id_list]
     
-    global_model = NeuralNetwork(bias=False).to(device)
+    global_model = DNN(bias=False).to(device)
+    # global_model = NeuralNetwork(bias=False).to(device)
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_cfmtx_bfag_record = {client_id:[] for client_id in client_id_list}
     local_cfmtx_afag_record = {client_id:[] for client_id in client_id_list}
@@ -154,9 +155,9 @@ if __name__ == "__main__":
             local_cfmtx_bfag_record[client_id].append(cfmtx)
             
             # Generating representations
-            condense_representation = torch.randn([512], requires_grad=True).unsqueeze(0).cuda()
+            condense_representation = torch.randn([100], requires_grad=True).unsqueeze(0).cuda()
             for t in range(epochs):
-                condense_representation = gen_representation(train_dataloader, local_model, condense_representation)
+                condense_representation = train_representation(train_dataloader, local_model, condense_representation)
             condense_representation_list.append(condense_representation.detach().cpu())
             local_model.zero_grad()
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}")

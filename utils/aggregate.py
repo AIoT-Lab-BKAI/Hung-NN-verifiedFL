@@ -18,23 +18,6 @@ def create_mask(dim, labels):
         mask[label, label] = 1
     return mask
 
-def read_models(model_folder):
-    models = []
-    label_list = [[1,2],[3,4],[5,6],[7,8],[9,0]]
-    indexes = []
-    
-    for client_id in [0,1,2,3,4]: 
-        model = NeuralNetwork()
-        model.load_state_dict(torch.load(os.path.join(model_folder, f"client_{client_id}.pt")))
-        mask = create_mask(10, labels=label_list[client_id])
-        model.update_mask(mask)
-        model.freeze_grad()
-        models.append(model)
-        indexes.append(client_id)
-
-    condensed_rep = torch.load(os.path.join(model_folder, "condense_representation.rep"))
-    return models, condensed_rep, indexes
-
 def get_ultimate_layer(model):
     penul = get_module_from_model(model)[-1]._parameters['weight']
     return penul
@@ -134,35 +117,3 @@ def check_representations(model, representations, testing_data, device):
         cfmtx = cfmtx/down
     
     return cfmtx
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--round", type=int, default=0)
-    args = parser.parse_args()
-
-    # Reading models
-    client_models, representations, indexes = read_models(f"models/client/round_{args.round}")
-    # Aggregation
-    global_model = aggregate(client_models, representations, indexes)
-    
-    # Testing global model
-    testing_data = datasets.MNIST(
-        root="data",
-        train=False,
-        download=False,
-        transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-    )
-    
-    # check_representations(global_model, representations, testing_data, "cuda")
-    # check_representations(client_models[0], representations, testing_data, "cuda")
-    if not Path(f"models/server").exists():
-        os.makedirs(f"models/server")
-        
-    cfmtx = test(global_model, testing_data)
-    np.savetxt(os.path.join(f"models/server/server_start_{args.round + 1}_cfmtx.txt"), cfmtx, fmt='%.2f', delimiter=',')
-
-    torch.save(global_model.state_dict(), f"models/server/server_start_{args.round + 1}.pt")
-    print("Done aggregation round", args.round)
-    
-    U_cfmtx = check_representations(global_model, representations, testing_data, "cuda")
-    np.savetxt(os.path.join(f"models/server/U{args.round + 1}_cfmtx.txt"), U_cfmtx, fmt='%.2f', delimiter=',')

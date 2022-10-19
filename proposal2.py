@@ -1,4 +1,4 @@
-from utils.train_smt import train_representation, test, batch_similarity, print_cfmtx, NumpyEncoder
+from utils.train_smt import test, batch_similarity, print_cfmtx, NumpyEncoder
 from utils.aggregate import aggregate, check_representations
 from pathlib import Path
 from torch.utils.data import DataLoader
@@ -19,11 +19,7 @@ def create_mask(dim, dataset):
         mask[label, label] = 1
     return mask
 
-
-def train(dataloader, model, loss_fn, optimizer, fct=0.01):
-    base_model = deepcopy(model).cuda()
-    base_model.freeze_grad()
-    
+def train(dataloader, model, loss_fn, optimizer, other_condensed_rep):   
     model = model.cuda()
     model.train()
     losses = []
@@ -33,10 +29,9 @@ def train(dataloader, model, loss_fn, optimizer, fct=0.01):
 
         # Compute prediction error
         pred, rep = model.pred_and_rep(X)
-        _, rep_base = base_model.pred_and_rep(X)
         
-        sim = batch_similarity(rep, rep_base)
-        loss = loss_fn(pred, y) + fct * torch.sum(sim - torch.diag(sim)) / (X.shape[0] **2)
+        sim = batch_similarity(rep, other_condensed_rep)
+        loss = loss_fn(pred, y) + torch.sum(torch.pow(sim,2))/(X.shape[0])
         
         # Backpropagation
         optimizer.zero_grad()
@@ -46,6 +41,19 @@ def train(dataloader, model, loss_fn, optimizer, fct=0.01):
         losses.append(loss.item())
         
     return losses
+
+def train_representation(dataloader, model, condense_representation, other_condensed_rep):
+    for batch, (X, y) in enumerate(dataloader):
+        X, y = X.to(device), y.to(device)
+        pred, rep = model.pred_and_rep(X)
+        condense_representation.retain_grad()
+        sim = batch_similarity(rep, condense_representation)
+        sim_to_others = batch_similarity(condense_representation, other_condensed_rep)
+        condense_represent_loss = 0.75 * torch.sum(1 - sim)  + 0.25 * torch.sum(sim_to_others)
+        condense_represent_loss.backward()
+        condense_representation = condense_representation - 5 * condense_representation.grad
+            
+    return condense_representation
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -79,10 +87,13 @@ if __name__ == "__main__":
     local_cfmtx_afag_record = {client_id:[] for client_id in client_id_list}
     global_cfmtx_record = []
     U_cfmtx_record = []
+    condense_representation_list = [torch.randn([512], requires_grad=True).unsqueeze(0) for client_id in client_id_list]
+    
+    clients_mask = [None for client_id in client_id_list]
     
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
-        condense_representation_list = []
+        
         client_models = []
         
         # Local training
@@ -92,17 +103,22 @@ if __name__ == "__main__":
             mydataset = clients_dataset[client_id]
             train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
             
-            U = create_mask(dim=10, dataset=mydataset)
-                
+            if clients_mask[client_id] is None:
+                clients_mask[client_id] = create_mask(dim=10, dataset=mydataset)
+            
             local_model = copy.deepcopy(global_model)
-            local_model.update_mask(U)
+            local_model.update_mask(clients_mask[client_id])
 
             loss_fn = torch.nn.CrossEntropyLoss()
             optimizer = torch.optim.SGD(local_model.parameters(), lr=1e-3)
 
+            # Other representations
+            other_clients_representation = [condense_representation_list[i] for i in client_id_list if i != client_id]
+            other_condensed_rep = torch.cat(other_clients_representation, dim=0).cuda().detach()
+            
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, fct=0.1)))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, other_condensed_rep)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
             client_models.append(local_model)
@@ -111,17 +127,17 @@ if __name__ == "__main__":
             cfmtx = test(local_model, mydataset)
             local_cfmtx_bfag_record[client_id].append(cfmtx)
             
-            # Generating representations
-            condense_representation = torch.randn([512], requires_grad=True).unsqueeze(0).cuda()
+            # Regenerating representations
+            condense_representation = condense_representation_list[client_id].cuda()
             for t in range(epochs):
-                condense_representation = train_representation(train_dataloader, local_model, condense_representation)
-            condense_representation_list.append(condense_representation.detach().cpu())
+                condense_representation = train_representation(train_dataloader, local_model, condense_representation, other_condensed_rep)
+            condense_representation = condense_representation.detach().cpu()
             local_model.zero_grad()
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}")
         
         print("    # Server aggregating... ", end="")
         # Aggregation
-        condensed_rep = torch.cat(condense_representation_list, dim=0)
+        condensed_rep = torch.cat(condense_representation_list, dim=0).detach()
         global_model = aggregate(client_models, condensed_rep, indexes=client_id_list)
         print("Done!")
         
@@ -136,10 +152,10 @@ if __name__ == "__main__":
         U_cfmtx = check_representations(global_model, condensed_rep, testing_data, "cuda")
         U_cfmtx_record.append(U_cfmtx)
     
-    if not Path("records/proposal").exists():
-        os.makedirs("records/proposal")
+    if not Path("records/proposal2").exists():
+        os.makedirs("records/proposal2")
     
-    json.dump(local_loss_record,        open("records/proposal/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_cfmtx_bfag_record,  open("records/proposal/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open("records/proposal/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
-    json.dump(U_cfmtx_record,           open("records/proposal/U_cfmtx_record.json", "w"),            cls=NumpyEncoder)
+    json.dump(local_loss_record,        open("records/proposal2/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_cfmtx_bfag_record,  open("records/proposal2/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open("records/proposal2/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(U_cfmtx_record,           open("records/proposal2/U_cfmtx_record.json", "w"),            cls=NumpyEncoder)

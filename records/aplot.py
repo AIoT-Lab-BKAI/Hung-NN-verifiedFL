@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -5,19 +6,24 @@ import os
 import json
 from pathlib import Path
 
-folder = "proposal"
 
-global_cfmtx = json.load(open(f"./{folder}/global_cfmtx_record.json", "r"))
-local_cfmtx = json.load(open(f"./{folder}/local_cfmtx_bfag_record.json", "r"))
+parser = argparse.ArgumentParser()
+parser.add_argument("--folder", type=str, default="fedavg")
+args = parser.parse_args()
 
-if folder in ["proposal"]:
-    U_cfmtx = json.load(open(f"./{folder}/U_cfmtx_record.json", "r"))
+folder = args.folder
+
+global_cfmtx = json.load(open(f"./records/{folder}/global_cfmtx_record.json", "r"))
+local_cfmtx = json.load(open(f"./records/{folder}/local_cfmtx_bfag_record.json", "r"))
+
+if "proposal" in folder:
+    U_cfmtx = json.load(open(f"./records/{folder}/U_cfmtx_record.json", "r"))
 
 for r in range(100):
     if not Path(f"figures/{folder}/round_{r}").exists():
         os.makedirs(f"figures/{folder}/round_{r}")
 
-    if folder in ["proposal"]:
+    if "proposal" in folder:
         # Server plot
         f, axes = plt.subplots(1,2, figsize=(8,4.5), facecolor='white')
         s = sns.heatmap(ax=axes[0], data=global_cfmtx[r], annot=True, fmt=".2f", cmap="YlGnBu", cbar=False)

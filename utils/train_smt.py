@@ -22,7 +22,7 @@ def batch_similarity(a, b):
     return (a @ b.T)/ (torch.norm(a, dim=1, keepdim=True) @ torch.norm(b, dim=1, keepdim=True).T)
 
 
-def gen_representation(dataloader, model, condense_representation):
+def train_representation(dataloader, model, condense_representation):
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
         pred, rep = model.pred_and_rep(X)
