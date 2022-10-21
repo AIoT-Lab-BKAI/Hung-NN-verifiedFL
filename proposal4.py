@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from utils import fmodule
 from utils.dataloader import CustomDataset
-from utils.model import DNN_proposal
+from utils.proposal_model import DNN_proposal
 from utils.train_smt import NumpyEncoder, print_cfmtx
 from torchmetrics import ConfusionMatrix
 
@@ -126,11 +126,10 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--round", type=int, default=1)
-    parser.add_argument("--lr", type=float, default="0.01")
+    parser.add_argument("--warmup_round", type=int, default=1)
     args = parser.parse_args()
     batch_size = args.batch_size
     epochs = args.epochs
-    lr = args.lr
     
     training_data = datasets.MNIST(
         root="./data",
@@ -158,43 +157,51 @@ if __name__ == "__main__":
     U_cfmtx_record = []
     clients_mask = [None for client_id in client_id_list]
     
+    warmup = True
+    
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         client_models = []
+        
+        if cur_round > args.warmup_round:
+            warmup = False 
         
         # Local training
         for client_id in client_id_list:
             print("    Client {} training... ".format(client_id), end="")
             # Training process
             mydataset = clients_dataset[client_id]
-            train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
             
             if clients_mask[client_id] is None:
                 clients_mask[client_id] = create_mask(dim=10, dataset=mydataset)
                 
             local_model = copy.deepcopy(global_model)
-            loss_fn = torch.nn.CrossEntropyLoss()
-            optimizer = torch.optim.SGD(local_model.parameters(), lr=lr)
+            optimizer = torch.optim.SGD(local_model.parameters(), lr=1e-3)
             
-            epoch_loss = []
-            epoch_classification_loss = []
-            epoch_masking_loss = []
-            print("Client", client_id, "training at round", cur_round)
-            for t in range(epochs):
-                losses, clss_losses, mask_losses = train(train_dataloader, local_model, loss_fn, optimizer, clients_mask[client_id])
-                epoch_loss.append(np.mean(losses))
-                epoch_classification_loss.append(np.mean(clss_losses))
-                epoch_masking_loss.append(np.mean(mask_losses))
-                print("Epochs", t, "Avg. class loss:", epoch_classification_loss[-1], "Avg. mask loss:", epoch_masking_loss[-1])
-                
-            local_loss_record[client_id].append(np.mean(epoch_loss))
+            if warmup:
+                # Train the representation space
+                train_dataloader = DataLoader(mydataset, batch_size=2, shuffle=True, drop_last=True)
+                loss_fn = torch.nn.MSELoss()
+                for t in range(epochs):
+                    representation_training(train_dataloader, local_model, loss_fn, optimizer, device)
+                    
+            else:
+                train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
+                # Train the mask first then train the classifier
+                for t in range(epochs):
+                    mask_training(train_dataloader, local_model, optimizer, clients_mask[client_id], device)
+                    
+                epoch_loss = []
+                for t in range(epochs):
+                    epoch_loss.append(np.mean(classification_training(train_dataloader, local_model, loss_fn, optimizer, device)))
+                local_loss_record[client_id].append(np.mean(epoch_loss))
+
+                # Testing the local_model to its own data
+                cfmtx = test(local_model, mydataset)
+                local_cfmtx_bfag_record[client_id].append(cfmtx)
+                print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}")
             
             client_models.append(local_model)
-            
-            # Testing the local_model to its own data
-            cfmtx = test(local_model, mydataset)
-            local_cfmtx_bfag_record[client_id].append(cfmtx)
-            print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, aver. classification loss: {np.mean(epoch_classification_loss):>.3f}, aver. masking loss: {np.mean(epoch_masking_loss):>.3f}")
             
         print("    # Server aggregating... ", end="")
         # Aggregation
