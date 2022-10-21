@@ -1,15 +1,17 @@
 import argparse
 import json
-import torch
 import os
 from pathlib import Path
-from utils.model import NeuralNetwork, batch_similarity
-from utils.fmodule import get_module_from_model
-from utils import fmodule
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from torchmetrics import ConfusionMatrix
+
 import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from torchmetrics import ConfusionMatrix
+from torchvision import datasets, transforms
+from utils import fmodule
+from utils.fmodule import get_module_from_model
+from utils.model import NeuralNetwork, batch_similarity
 
 
 def create_mask(dim, labels):
@@ -106,9 +108,11 @@ def check_representations(model, representations, testing_data, device):
             pred, rep = model.pred_and_rep(X)
             
             psi_x = batch_similarity(rep, representations)
-            min = torch.min(psi_x, dim=1, keepdim=True).values
-            max = torch.max(psi_x, dim=1, keepdim=True).values
-            psi_x = (psi_x - min)/(max - min)
+            # min = torch.min(psi_x, dim=1, keepdim=True).values
+            # max = torch.max(psi_x, dim=1, keepdim=True).values
+            # psi_x = (psi_x - min)/(max - min)
+            psi_x = torch.argmax(psi_x, dim=1, keepdim=True)
+            psi_x = F.one_hot(psi_x.squeeze(), num_classes=representations.shape[0]) * 1.0
             cmtx += confmat(psi_x, recoord(y))
             
         cfmtx = cmtx.cpu().numpy()

@@ -1,7 +1,8 @@
+import torch
 import torch.nn.functional as F
 from torch import nn
-import torch
 from utils.fmodule import FModule
+
 
 def batch_similarity(a, b):
     """
@@ -26,7 +27,7 @@ def batch_euclidean(a, b):
         c = sim (a, b) of shape (x, z)
     """
     z = a.unsqueeze(1) - b.unsqueeze(1).transpose(0,1)
-    z = torch.pow(torch.norm(z, dim=2),2)/(z.shape[0] * z.shape[1]) + 0.01
+    z = torch.pow(torch.norm(z, dim=2),2)/(z.shape[0] * z.shape[1])
     return z
     
 
@@ -134,10 +135,12 @@ class DNN(FModule):
             b = r_x.shape[0]
             if true_psi is None:
                 psi_x = batch_similarity(r_x.detach(), self.Psi)
-                min = torch.min(psi_x, dim=1, keepdim=True).values
-                max = torch.max(psi_x, dim=1, keepdim=True).values
-                psi_x = (psi_x - min)/(max - min)
-                psi_x = psi_x/torch.sum(psi_x, dim=1, keepdim=True)
+                # min = torch.min(psi_x, dim=1, keepdim=True).values
+                # max = torch.max(psi_x, dim=1, keepdim=True).values
+                # psi_x = (psi_x - min)/(max - min)
+                # psi_x = psi_x/torch.sum(psi_x, dim=1, keepdim=True)
+                psi_x = torch.argmax(psi_x, dim=1, keepdim=True)
+                psi_x = F.one_hot(psi_x.squeeze(), num_classes=self.Psi.shape[0]) * 1.0
             else:
                 psi_x = true_psi
             
@@ -160,7 +163,12 @@ class DNN(FModule):
 class DNN2(DNN):
     def __init__(self, input_dim=784, mid_dim=100, output_dim=10, bias=False):
         super().__init__(input_dim, mid_dim, output_dim, bias)
-        
+    
+    def encoder(self, x):
+        x = torch.flatten(x, 1)
+        x = F.sigmoid(self.fc1(x))
+        return x
+    
     def masking(self, r_x, true_psi=None):
         logits = self.fc2(r_x).unsqueeze(2)
         mask = None
@@ -179,3 +187,97 @@ class DNN2(DNN):
             
             mask = (self.Phi.view(self.Phi.shape[0], -1).T @ psi_x.unsqueeze(2)).view(b, 10, 10)
         return (mask.to("cuda" if logits.is_cuda else "cpu").to(torch.float32) @ logits).squeeze(2)
+
+
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        torch.nn.init.xavier_uniform_(m.weight)
+        m.bias.data.fill_(0.01)
+        
+class DNN_proposal(FModule):
+    def __init__(self, input_dim = 784, mid_dim = 100, output_dim = 10):
+        super().__init__()
+        # define network layers
+        self.fc1 = nn.Linear(input_dim, mid_dim)
+        self.fc2 = nn.Linear(mid_dim, output_dim)
+        # mask regenerator
+        self.mg_fc1 = nn.Linear(mid_dim, 256)
+        self.mg_fc2 = nn.Linear(256, output_dim ** 2)
+        self.apply(init_weights)
+    
+    def __call__(self, x, mask=None):
+        return self.forward(x, mask=mask)
+    
+    def forward(self, x, mask=None):
+        r_x = self.encoder(x)
+        l_x = self.decoder(r_x)
+        m_x = self.mask_regenerator(r_x.detach())
+        if mask is None:
+            suro_l_x = l_x
+        else:
+            suro_l_x = self.surogate_logits(l_x, mask)
+        mirr_suro_l_x = self.mirror_surogate_logits(suro_l_x, m_x.detach())
+        output = F.log_softmax(mirr_suro_l_x, dim=1)
+        return output
+    
+    def mask(self, x):
+        """
+        This function returns the mask of x
+        """
+        r_x = self.encoder(x)
+        m_x = self.mask_regenerator(r_x.detach())
+        return m_x 
+    
+    def encoder(self, x):
+        """
+        This function returns the representation of x
+        """
+        r_x = torch.flatten(x, 1)
+        r_x = F.relu(self.fc1(r_x))
+        return r_x
+    
+    def decoder(self, r_x):
+        """
+        This function returns the logits of r_x
+        """
+        l_x = self.fc2(r_x)
+        return l_x
+    
+    def mask_regenerator(self, r_x):
+        """
+        This function generate a mask for each element in r_x,
+        returning shape of b x 10 x 10
+        """
+        m_x = F.leaky_relu(self.mg_fc1(r_x))
+        m_x = torch.sigmoid(self.mg_fc2(m_x))
+        m_x = m_x.view(r_x.shape[0], 10, 10)
+        return m_x
+    
+    def surogate_logits(self, l_x, mask):
+        """
+        Args:
+            l_x     : b x 10
+            mask    : 10 x 10
+        
+        This function return the logits that are masked,
+        the returning shape b x 10
+        """
+        l_x = l_x.unsqueeze(2)
+        l_x_suro = (mask * 1.0) @ l_x
+        return l_x_suro.squeeze(2)
+    
+    def mirror_surogate_logits(self, l_x_suro, m_x):
+        """
+        Args:
+            l_x_suro: b x 10
+            m_x     : b x 10 x 10
+        
+        This function perform dot multiplication of m_x and l_x_suro,
+        returning the matrix of shape b x 10
+        """
+        l_x_mirr_suro = m_x @ l_x_suro.unsqueeze(2)
+        return l_x_mirr_suro.squeeze(2)
+    
+    def freeze_feature_extractor(self):
+        self.fc1.requires_grad = False
+        return

@@ -1,13 +1,14 @@
-from pathlib import Path
-import torch
-from torch.utils.data import DataLoader
-from utils.dataloader import CustomDataset
-from torchvision import datasets, transforms
-from torchmetrics import ConfusionMatrix
+import argparse
 import json
 import os
-import argparse
+from pathlib import Path
+
 import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from torchmetrics import ConfusionMatrix
+from torchvision import datasets, transforms
+from utils.dataloader import CustomDataset
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -35,12 +36,11 @@ def train_representation(dataloader, model, condense_representation):
     return condense_representation
 
 
-def test(model, testing_data):
+def test(model, testing_data, device="cuda"):
     test_loader = DataLoader(testing_data, batch_size=32, shuffle=True, drop_last=False)
-    model.cuda()
+    model.to(device)
 
     loss_fn = torch.nn.CrossEntropyLoss()
-    device = "cuda"
 
     size = len(test_loader.dataset)
     num_batches = len(test_loader)

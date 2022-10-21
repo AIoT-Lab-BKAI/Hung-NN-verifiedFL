@@ -1,13 +1,19 @@
-from utils.train_smt import train_representation, test, batch_similarity, print_cfmtx, NumpyEncoder
-from utils.aggregate import aggregate, check_representations
-from pathlib import Path
-from torch.utils.data import DataLoader
-from utils.dataloader import CustomDataset
-from torchvision import datasets, transforms
-from utils.model import NeuralNetwork
+import argparse
+import copy
+import json
+import os
 from copy import deepcopy
+from pathlib import Path
 
-import torch, argparse, json, os, numpy as np, copy
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from utils.aggregate import aggregate, check_representations
+from utils.dataloader import CustomDataset
+from utils.model import NeuralNetwork
+from utils.train_smt import (NumpyEncoder, batch_similarity, print_cfmtx, test,
+                             train_representation)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

@@ -1,14 +1,20 @@
-from utils.train_smt import test, print_cfmtx, NumpyEncoder
-from utils.aggregate import aggregate
-from pathlib import Path
-from torch.utils.data import DataLoader
-from utils.dataloader import CustomDataset
-from torchvision import datasets, transforms
-from utils.model import DNN2, batch_euclidean
+import argparse
+import copy
+import json
+import os
 from copy import deepcopy
-from torchmetrics import ConfusionMatrix
+from pathlib import Path
 
-import torch, argparse, json, os, numpy as np, copy, torch.nn.functional as F
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from torchmetrics import ConfusionMatrix
+from torchvision import datasets, transforms
+from utils.aggregate import aggregate
+from utils.dataloader import CustomDataset
+from utils.model import DNN2, batch_euclidean
+from utils.train_smt import NumpyEncoder, print_cfmtx, test
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -23,7 +29,6 @@ def create_mask(dim, dataset):
 def train(dataloader, model, loss_fn, optimizer, other_condensed_rep):
     mask = model.lowrank_mtx
     label_list = torch.diag(mask).nonzero().flatten().tolist()
-    rep_list = []
     
     model = model.cuda()
     model.train()
@@ -35,31 +40,34 @@ def train(dataloader, model, loss_fn, optimizer, other_condensed_rep):
         # Compute prediction error
         pred, rep = model.pred_and_rep(X)
         
+        rep_list = []
+        
         for label in label_list:
             label_rep = rep[y==label]
-            rep_list.append(label_rep)
+            if len(label_rep):
+                rep_list.append(label_rep)
         
         classification_loss = loss_fn(pred, y) 
     
-    same_interclass_distance = 0
-    for label_rep in rep_list:
-        same_interclass_distance += 0.5 * torch.sum(batch_euclidean(label_rep, label_rep))
+        same_interclass_distance = 0
+        for label_rep in rep_list:
+            same_interclass_distance += 0.5 * torch.sum(batch_euclidean(label_rep, label_rep))
     
-    diff_interclass_distance = 0
-    for i in range(len(rep_list)):
-        for j in range(i + 1, len(rep_list)):
-            diff_interclass_distance += 0.5 * torch.sum(batch_euclidean(rep_list[i], rep_list[j]))
+        diff_interclass_distance = 0
+        for i in range(len(rep_list)):
+            for j in range(i + 1, len(rep_list)):
+                diff_interclass_distance += 0.5 * torch.sum(batch_euclidean(rep_list[i], rep_list[j]))
 
-    # diff_interclient_rep_distance = 0.5 * torch.sum(batch_euclidean(rep, other_condensed_rep))
-    
-    # total loss
-    loss = 0.5 * classification_loss + 0.25 * same_interclass_distance - 0.25 * diff_interclass_distance #- 0.1 * diff_interclient_rep_distance
-    # Backpropagation
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+        # diff_interclient_rep_distance = 0.5 * torch.sum(batch_euclidean(rep, other_condensed_rep))
 
-    losses.append(loss.item())
+        loss = 0.5 * classification_loss + 0.25 * same_interclass_distance - 0.25 * diff_interclass_distance #- 0.1 * diff_interclient_rep_distance
+        
+        # Backpropagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        losses.append(loss.item())
         
     return losses
 
@@ -74,7 +82,6 @@ def train_representation(dataloader, model, condense_representation):
         condense_representation = condense_representation - 5 * condense_representation.grad
         
     return condense_representation
-
 
 def check_representations(model, representations, testing_data, device):
     test_loader = DataLoader(testing_data, batch_size=32, shuffle=True, drop_last=False)
@@ -160,7 +167,7 @@ if __name__ == "__main__":
             print("    Client {} training... ".format(client_id), end="")
             # Training process
             mydataset = clients_dataset[client_id]
-            train_dataloader = DataLoader(mydataset, batch_size=len(mydataset), shuffle=True, drop_last=False)
+            train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
             
             if clients_mask[client_id] is None:
                 clients_mask[client_id] = create_mask(dim=10, dataset=mydataset)

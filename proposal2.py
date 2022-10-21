@@ -1,13 +1,18 @@
-from utils.train_smt import test, batch_similarity, print_cfmtx, NumpyEncoder
-from utils.aggregate import aggregate, check_representations
-from pathlib import Path
-from torch.utils.data import DataLoader
-from utils.dataloader import CustomDataset
-from torchvision import datasets, transforms
-from utils.model import NeuralNetwork
+import argparse
+import copy
+import json
+import os
 from copy import deepcopy
+from pathlib import Path
 
-import torch, argparse, json, os, numpy as np, copy
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from utils.aggregate import aggregate, check_representations
+from utils.dataloader import CustomDataset
+from utils.model import NeuralNetwork
+from utils.train_smt import NumpyEncoder, batch_similarity, print_cfmtx, test
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -19,7 +24,10 @@ def create_mask(dim, dataset):
         mask[label, label] = 1
     return mask
 
-def train(dataloader, model, loss_fn, optimizer, other_condensed_rep):   
+def train(dataloader, model, loss_fn, optimizer, other_condensed_rep):  
+    mask = model.lowrank_mtx
+    label_list = torch.diag(mask).nonzero().flatten().tolist()
+     
     model = model.cuda()
     model.train()
     losses = []
@@ -30,8 +38,28 @@ def train(dataloader, model, loss_fn, optimizer, other_condensed_rep):
         # Compute prediction error
         pred, rep = model.pred_and_rep(X)
         
-        sim = batch_similarity(rep, other_condensed_rep)
-        loss = loss_fn(pred, y) + torch.sum(torch.pow(sim,2))/(X.shape[0])
+        rep_list = []
+        
+        for label in label_list:
+            label_rep = rep[y==label]
+            if len(label_rep):
+                rep_list.append(label_rep)
+        
+        classification_loss = loss_fn(pred, y) 
+    
+        same_interclass_distance = 0
+        for label_rep in rep_list:
+            same_interclass_distance += 0.5 * torch.sum(torch.pow(batch_similarity(label_rep, label_rep), 2))/(label_rep.shape[0] * label_rep.shape[0])
+    
+        diff_interclass_distance = 0
+        for i in range(len(rep_list)):
+            for j in range(i + 1, len(rep_list)):
+                diff_interclass_distance += 0.5 * torch.sum(torch.pow(batch_similarity(rep_list[i], rep_list[j]), 2))/(rep_list[i].shape[0] * rep_list[j].shape[0])
+        
+        diff_interclient_distance = torch.sum(torch.pow(batch_similarity(rep, other_condensed_rep),2))/(rep.shape[0] * other_condensed_rep.shape[0])
+        
+        classification_loss = loss_fn(pred, y)
+        loss = classification_loss + same_interclass_distance - diff_interclass_distance - diff_interclient_distance
         
         # Backpropagation
         optimizer.zero_grad()
@@ -48,11 +76,11 @@ def train_representation(dataloader, model, condense_representation, other_conde
         pred, rep = model.pred_and_rep(X)
         condense_representation.retain_grad()
         sim = batch_similarity(rep, condense_representation)
-        sim_to_others = batch_similarity(condense_representation, other_condensed_rep)
-        condense_represent_loss = 0.75 * torch.sum(1 - sim)  + 0.25 * torch.sum(sim_to_others)
+        # sim_to_others = batch_similarity(condense_representation, other_condensed_rep)
+        condense_represent_loss = torch.sum(1 - sim)  #+ 0.25 * torch.sum(sim_to_others)
         condense_represent_loss.backward()
         condense_representation = condense_representation - 5 * condense_representation.grad
-            
+
     return condense_representation
 
 if __name__ == "__main__":
@@ -147,9 +175,12 @@ if __name__ == "__main__":
         global_cfmtx_record.append(cfmtx)
         print("Done!")
         np.set_printoptions(precision=2, suppress=True)
+        print('-'*20, "Classification confussion matrix", '-'*20)
         print_cfmtx(cfmtx)
         
         U_cfmtx = check_representations(global_model, condensed_rep, testing_data, "cuda")
+        print('-'*20, "U selection confussion matrix", '-'*20)
+        print_cfmtx(U_cfmtx)
         U_cfmtx_record.append(U_cfmtx)
     
     if not Path("records/proposal2").exists():
