@@ -15,25 +15,26 @@ class DNN_proposal(FModule):
         self.fc1 = nn.Linear(input_dim, mid_dim)
         self.fc2 = nn.Linear(mid_dim, output_dim)
         # mask regenerator
-        self.mg_fc1 = nn.Linear(mid_dim, 256)
-        self.mg_fc2 = nn.Linear(256, output_dim ** 2)
+        self.mg_fc1 = nn.Linear(mid_dim, 100)
+        self.mg_fc2 = nn.Linear(100, output_dim)
         self.apply(init_weights)
     
     def forward(self, x):
         r_x = self.encoder(x).detach()
         l_x = self.decoder(r_x)
-        m_x = self.mask_regenerator(r_x).detach()
+        dm_x = self.mask_diagonal_regenerator(r_x).detach()
+        m_x = torch.diag_embed(dm_x)
         suro_l_x = self.surogate_logits(l_x, m_x)
         output = F.log_softmax(suro_l_x, dim=1)
         return output
     
-    def mask(self, x):
+    def mask_diagonal(self, x):
         """
-        This function returns the mask of x
+        This function returns the mask's diagonal vector of x
         """
         r_x = self.encoder(x).detach()
-        m_x = self.mask_regenerator(r_x)
-        return m_x 
+        dm_x = self.mask_diagonal_regenerator(r_x)
+        return dm_x 
     
     def encoder(self, x):
         """
@@ -50,15 +51,15 @@ class DNN_proposal(FModule):
         l_x = self.fc2(r_x)
         return l_x
     
-    def mask_regenerator(self, r_x):
+    def mask_diagonal_regenerator(self, r_x):
         """
-        This function generate a mask for each element in r_x,
-        returning shape of b x 10 x 10
+        This function generate a mask's diagonal vector for each element in r_x,
+        returning shape of b x 10
         """
-        m_x = F.leaky_relu(self.mg_fc1(r_x))
-        m_x = torch.sigmoid(self.mg_fc2(m_x))
-        m_x = m_x.view(r_x.shape[0], 10, 10)
-        return m_x
+        dm_x = F.leaky_relu(self.mg_fc1(r_x))
+        dm_x = torch.relu(self.mg_fc2(dm_x))
+        dm_x = dm_x.view(r_x.shape[0], 10)
+        return dm_x
         
     def surogate_logits(self, l_x, m_x):
         """
