@@ -62,7 +62,7 @@ def mask_training(dataloader, model, optimizer, original_mask, device="cuda:1"):
         mask_loss.backward()
         optimizer.step()
         
-    return
+    return mirr_mask.detach().cpu().numpy()
 
 def representation_training(dataloader, model, loss_fn, optimizer, device="cuda:1"):
     """
@@ -91,7 +91,7 @@ def representation_training(dataloader, model, loss_fn, optimizer, device="cuda:
         
     return
 
-def test(model, testing_data, device="cuda"):
+def test(model, testing_data, device="cuda:1"):
     test_loader = DataLoader(testing_data, batch_size=32, shuffle=True, drop_last=False)
     model.to(device)
 
@@ -121,12 +121,46 @@ def test(model, testing_data, device="cuda"):
     cfmtx = cfmtx/down
     return cfmtx
 
+def check_masking_loss(global_model, testing_data, loss_fn, device="cuda:1"):
+    test_loader = DataLoader(testing_data, batch_size=32, shuffle=True, drop_last=False)
+    global_model.to(device)
+    
+    label_list = [[1,2],[3,4],[5,6],[7,8],[9,0]]
+    
+    def masking(labels, dim=10):
+        mask = torch.zeros([len(labels), dim, dim]) * 1.
+        for label_idx in range(labels):
+            label = labels[label_idx]
+            mask_units = None
+            for client_label in label_list:
+                if label in client_label:
+                    mask_units = client_label
+                    break
+            
+            for unit in mask_units:
+                mask[label_idx, unit, unit] = 1.
+                
+        return mask
+    
+    total_loss = 0
+    num_batch = 0
+    with torch.no_grad():
+        for X, y in test_loader:
+            X, y = X.to(device), y.to(device)
+            mirr_mask = model.mask(X)
+            ground_mask = masking(y.tolist())
+            total_loss += loss_fn(mirr_mask, ground_mask)
+            num_batch += 1
+            
+    return total_loss/num_batch
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=4)
+    parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--round", type=int, default=1)
-    parser.add_argument("--warmup_round", type=int, default=1)
+    parser.add_argument("--round", type=int, default=100)
+    parser.add_argument("--warmup_round", type=int, default=20)
     args = parser.parse_args()
     batch_size = args.batch_size
     epochs = args.epochs
@@ -151,10 +185,11 @@ if __name__ == "__main__":
     
     global_model = DNN_proposal().to(device)
     local_loss_record = {client_id:[] for client_id in client_id_list}
+    local_mask_record = {client_id:[] for client_id in client_id_list}
     local_cfmtx_bfag_record = {client_id:[] for client_id in client_id_list}
     local_cfmtx_afag_record = {client_id:[] for client_id in client_id_list}
     global_cfmtx_record = []
-    U_cfmtx_record = []
+    global_masking_loss = []
     clients_mask = [None for client_id in client_id_list]
     
     warmup = True
@@ -180,17 +215,21 @@ if __name__ == "__main__":
             
             if warmup:
                 # Train the representation space
+                print("warming up...", end="")
                 train_dataloader = DataLoader(mydataset, batch_size=2, shuffle=True, drop_last=True)
+                
                 loss_fn = torch.nn.MSELoss()
                 for t in range(epochs):
                     representation_training(train_dataloader, local_model, loss_fn, optimizer, device)
                     
             else:
                 train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
-                # Train the mask first then train the classifier
+                
+                # Train the mask first
                 for t in range(epochs):
-                    mask_training(train_dataloader, local_model, optimizer, clients_mask[client_id], device)
-                    
+                    local_mask_record[client_id].append(mask_training(train_dataloader, local_model, optimizer, clients_mask[client_id], device))
+                
+                # Then train the classifier
                 epoch_loss = []
                 for t in range(epochs):
                     epoch_loss.append(np.mean(classification_training(train_dataloader, local_model, loss_fn, optimizer, device)))
@@ -214,10 +253,16 @@ if __name__ == "__main__":
         print("Done!")
         np.set_printoptions(precision=2, suppress=True)
         print_cfmtx(cfmtx)
-        
-        if not Path("records/proposal4").exists():
-            os.makedirs("records/proposal4")
-        
-        json.dump(local_loss_record,        open("records/proposal4/local_loss_record.json", "w"),         cls=NumpyEncoder)
-        json.dump(local_cfmtx_bfag_record,  open("records/proposal4/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
-        json.dump(global_cfmtx_record,      open("records/proposal4/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+
+        U_cfmtx = check_masking_loss(global_model, testing_data, nn.MSEloss(), device)
+        global_masking_loss.append(U_cfmtx)
+    
+    if not Path("records/proposal4").exists():
+        os.makedirs("records/proposal4")
+    
+    json.dump(local_loss_record,        open("records/proposal4/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_mask_record,        open("records/proposal4/local_mask_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_cfmtx_bfag_record,  open("records/proposal4/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open("records/proposal4/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(global_masking_loss,      open("records/proposal4/global_masking_loss.json", "w"),       cls=NumpyEncoder)
+    
