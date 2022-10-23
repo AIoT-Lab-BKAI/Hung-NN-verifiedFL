@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from utils import fmodule
 from utils.dataloader import CustomDataset
-from utils.proposal_model import DNN_proposal
+from utils.proposal_model import DNN_proposal, augment_model
 from utils.train_smt import NumpyEncoder, print_cfmtx
 from torchmetrics import ConfusionMatrix
 
@@ -24,7 +24,8 @@ def create_mask_diagonal(dim, dataset):
         mask[label] = 1
     return mask
 
-def classification_training(dataloader, model, loss_fn, optimizer, device="cuda:1"):
+def classification_training(dataloader, model, loss_fn, optimizer, original_mask, device="cuda:1"):
+    original_mask = original_mask.to(device)
     model = model.to(device)
     model.train()
     losses = []
@@ -33,7 +34,7 @@ def classification_training(dataloader, model, loss_fn, optimizer, device="cuda:
         X, y = X.to(device), y.to(device)
 
         # Compute prediction error
-        pred = model(X)
+        pred = model(X, original_mask)
         classification_loss = loss_fn(pred, y)
 
         # Backpropagation
@@ -43,7 +44,7 @@ def classification_training(dataloader, model, loss_fn, optimizer, device="cuda:
         losses.append(classification_loss.item())
     
     # print("classification losses", losses)
-    return losses
+    return np.mean(losses)
 
 def mask_training(dataloader, model, optimizer, original_mask_diagonal, device="cuda:1"):
     """
@@ -59,15 +60,15 @@ def mask_training(dataloader, model, optimizer, original_mask_diagonal, device="
         X, y = X.to(device), y.to(device)
         mirr_mask_diagonal = model.mask_diagonal(X)
         mask_loss = torch.sum(torch.pow(mirr_mask_diagonal - original_mask_diagonal, 2))/mirr_mask_diagonal.shape[0]
-
+        loss = mask_loss
         # Backpropagation
         optimizer.zero_grad()
-        mask_loss.backward()
+        loss.backward()
         optimizer.step()
-        losses.append(mask_loss.item())
+        losses.append(loss.item())
         
     # print("Masking losses", losses)
-    return losses
+    return np.mean(losses), mirr_mask_diagonal[0]
 
 def representation_training(dataloader, model, loss_fn, optimizer, device="cuda:1"):
     """
@@ -80,6 +81,8 @@ def representation_training(dataloader, model, loss_fn, optimizer, device="cuda:
     """
     model = model.to(device)
     model.train()
+    same_class_dis = []
+    different_class_dis = []
     
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
@@ -93,8 +96,13 @@ def representation_training(dataloader, model, loss_fn, optimizer, device="cuda:
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-                
-    return
+        
+        if alpha > 0:
+            same_class_dis.append(distance.detach().item())
+        else:
+            different_class_dis.append(distance.detach().item())
+            
+    return np.mean(same_class_dis), np.mean(different_class_dis)
 
 def test(model, testing_data, device="cuda:1"):
     test_loader = DataLoader(testing_data, batch_size=32, shuffle=True, drop_last=False)
@@ -185,7 +193,8 @@ if __name__ == "__main__":
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
     )
     
-    client_id_list = [0,1,2,3,4]
+    client_id_list = [0]
+    # client_id_list = [0,1,2,3,4]
     clients_dataset = [CustomDataset(training_data, json.load(open(f"./jsons/client{client_id}.json", 'r'))) for client_id in client_id_list]
     impact_factors = [1/len(dataset) for dataset in clients_dataset]
     
@@ -218,28 +227,28 @@ if __name__ == "__main__":
                 clients_mask_diagonal[client_id] = create_mask_diagonal(dim=10, dataset=mydataset)
                 
             local_model = copy.deepcopy(global_model)
-            optimizer = torch.optim.SGD(local_model.parameters(), lr=1e-3)
-            mask_optimizer = torch.optim.Adam(local_model.parameters(), lr=1e-2)
-            
+            optimizer = torch.optim.Adam(local_model.parameters(), lr=1e-3)
+                       
             if warmup:
                 # Train the representation space
                 print("warming up...", end="")
                 train_dataloader = DataLoader(mydataset, batch_size=2, shuffle=True, drop_last=True)
-                
                 loss_fn = torch.nn.MSELoss()
                 for t in range(epochs):
-                    representation_training(train_dataloader, local_model, loss_fn, optimizer, device)
+                    same, diff = representation_training(train_dataloader, local_model, loss_fn, optimizer, device)
+                    # print("Epochs", t, "Same: ", same, "Diff", diff)
                 print(f"Done!")
                 
             else:
                 train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
-                
+            
                 # Train the mask first
                 epoch_loss = []
                 for t in range(epochs):
-                    mask_loss = mask_training(train_dataloader, local_model, mask_optimizer, clients_mask_diagonal[client_id], device)
-                    # local_mask_record[client_id].append(final_mask)
+                    mask_loss, mirr_mask_diagonal = mask_training(train_dataloader, local_model, optimizer, clients_mask_diagonal[client_id], "cuda")
+                    # print("Epochs", t, "mask_loss: ", mask_loss)
                     epoch_loss.append(mask_loss)
+                
                 local_mask_loss_record[client_id].append(np.mean(epoch_loss))
                 print(f"\n\tMasking done! Aver. round loss: {np.mean(epoch_loss):>.3f}")
                 
@@ -247,15 +256,17 @@ if __name__ == "__main__":
                 loss_fn = torch.nn.CrossEntropyLoss()
                 epoch_loss = []
                 for t in range(epochs):
-                    epoch_loss.append(np.mean(classification_training(train_dataloader, local_model, loss_fn, optimizer, device)))
+                    loss = classification_training(train_dataloader, local_model, loss_fn, optimizer, clients_mask_diagonal[client_id], "cuda")
+                    # print("Epochs", t, "loss: ", loss)
+                    epoch_loss.append(loss)
                 local_loss_record[client_id].append(np.mean(epoch_loss))
-
+                print(f"\tClassification done! Aver. round loss: {np.mean(epoch_loss):>.3f}")
+                
                 # Testing the local_model to its own data
                 cfmtx = test(local_model, mydataset)
                 local_cfmtx_bfag_record[client_id].append(cfmtx)
-                print(f"\tClassification done! Aver. round loss: {np.mean(epoch_loss):>.3f}")
-            
-            client_models.append(local_model)
+                
+            client_models.append(augment_model(local_model, torch.diag_embed(clients_mask_diagonal[client_id]), device))
             
         print("    # Server aggregating... ", end="")
         # Aggregation
