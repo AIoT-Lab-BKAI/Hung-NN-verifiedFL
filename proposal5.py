@@ -4,14 +4,12 @@ import json
 import os
 from pathlib import Path
 
-import random
-import utils.fmodule as fmodule
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from utils.dataloader import CustomDataset
-from utils.elements import ProposedNet, augment_model
+from utils.elements import ProposedNet, MaskGenerator, augmented_classifier
 from utils.train_smt import NumpyEncoder, print_cfmtx
 from torchmetrics import ConfusionMatrix
 
@@ -25,29 +23,32 @@ def create_mask_diagonal(dim, dataset):
         mask[label] = 1
     return mask
 
-def classification_training(dataloader, model, loss_fn, optimizer, original_mask, device="cuda:1"):
-    original_mask = original_mask.to(device)
+def classifier_training(dataloader, model:ProposedNet, original_mask_diagonal, device="cuda:1"):
+    original_mask_diagonal = original_mask_diagonal.to(device)
     model = model.to(device)
     model.train()
     losses = []
-        
+
+    optimizer = torch.optim.Adam(model.classifier.parameters())
+    loss_fn = torch.nn.CrossEntropyLoss()
+    
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
 
         # Compute prediction error
-        pred = model(X, original_mask)
-        classification_loss = loss_fn(pred, y)
+        pred = model(X, original_mask_diagonal)
+        loss = loss_fn(pred, y)
 
         # Backpropagation
         optimizer.zero_grad()
-        classification_loss.backward()
+        loss.backward()
         optimizer.step()
-        losses.append(classification_loss.item())
+        losses.append(loss.item())
     
     # print("classification losses", losses)
     return np.mean(losses)
 
-def mask_training(dataloader, model, optimizer, original_mask_diagonal, device="cuda:1"):
+def mask_training(dataloader, model:ProposedNet, original_mask_diagonal, device="cuda:1"):
     """
     This method trains to make the model generate a mask that is
     close to the original mask
@@ -55,47 +56,48 @@ def mask_training(dataloader, model, optimizer, original_mask_diagonal, device="
     original_mask_diagonal = original_mask_diagonal.to(device)
     model = model.to(device)
     model.train()
+    optimizer = torch.optim.Adam(model.mask_generator.parameters(), lr=1e-3)
     
-    losses = []
     storage = []
     
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
-        representation = model.encoder(X)
-        mirr_mask_diagonal = model.mask_diagonal_regenerator(representation)
-        storage.append((representation.detach().cpu(), mirr_mask_diagonal.detach().cpu()))
         
-        loss = torch.sum(torch.pow(mirr_mask_diagonal - original_mask_diagonal, 2))/mirr_mask_diagonal.shape[0]
+        r_x = model.feature_extractor(X).detach()
+        dm_x = model.mask_generator(r_x)
+        
+        storage.append((r_x.detach().cpu(), dm_x.detach().cpu()))
+        
+        loss = torch.sum(torch.pow(dm_x - original_mask_diagonal, 2))/dm_x.shape[0]
         
         # Backpropagation
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
-        mirr_mask_diagonal = (mirr_mask_diagonal > 1/10) * 1.0
-        loss = torch.sum(torch.abs(mirr_mask_diagonal - original_mask_diagonal))/mirr_mask_diagonal.shape[0]
-        losses.append(loss.item())
+        dm_x = (dm_x > 1/10) * 1.0
+        loss = torch.sum(torch.abs(dm_x - original_mask_diagonal))/dm_x.shape[0]
         
-    # print("Masking losses", losses)
-    return np.mean(losses), storage
+    return loss, storage
 
-def representation_training(dataloader, model, loss_fn, optimizer, device="cuda:1"):
+def representation_training(dataset, model:ProposedNet, device="cuda:1"):
     """
     This method trains for a discriminative representation space,
     using constrastive learning
-    
-    Args:
-        dataloader: batch_size of 2, drop_last = True
-        loss_fn:    mean square error
     """
-    model = model.to(device)
-    model.train()
+    
+    feature_extractor = model.feature_extractor.to(device)
+    feature_extractor.train()
     same_class_dis = []
     different_class_dis = []
     
+    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, drop_last=True)
+    optimizer = torch.optim.Adam(feature_extractor.parameters(), lr=1e-3)
+    loss_fn=torch.nn.MSELoss()
+    
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
-        representations = model.encoder(X)
+        representations = feature_extractor(X)
         
         alpha = 1.0 if y[0].item() == y[1].item() else -1.0
         distance = loss_fn(representations[0], representations[1])
@@ -143,7 +145,7 @@ def test(model, testing_data, device="cuda:1"):
     cfmtx = cfmtx/down
     return cfmtx
 
-def check_masking_loss(global_model, testing_data, loss_fn, device="cuda:1"):
+def check_masking_loss(global_model:ProposedNet, testing_data, device="cuda:1"):
     test_loader = DataLoader(testing_data, batch_size=32, shuffle=True, drop_last=False)
     global_model.to(device)
     
@@ -169,11 +171,11 @@ def check_masking_loss(global_model, testing_data, loss_fn, device="cuda:1"):
     with torch.no_grad():
         for X, y in test_loader:
             X, y = X.to(device), y.to(device)
-            mirr_mask_diagonal = global_model.mask_diagonal(X)
-            mirr_mask_diagonal = (mirr_mask_diagonal > 1/10) * 1.0
+            r_x = global_model.feature_extractor(X)
+            m_x = global_model.mask_generator(r_x)
+            m_x = (m_x > 1/10) * 1.0
             ground_mask = masking(y.tolist()).to(device)
-            mirr_mask_diagonal = (mirr_mask_diagonal > 1/10) * 1.0
-            total_loss += torch.sum(torch.abs(mirr_mask_diagonal - ground_mask))/mirr_mask_diagonal.shape[0]
+            total_loss += torch.sum(torch.abs(m_x - ground_mask))/m_x.shape[0]
             num_batch += 1
     
     return total_loss.cpu().numpy()/num_batch
@@ -208,67 +210,94 @@ if __name__ == "__main__":
     clients_dataset = [CustomDataset(training_data, json.load(open(f"./jsons/client{client_id}.json", 'r'))) for client_id in client_id_list]
     total_sample = np.sum([len(dataset) for dataset in clients_dataset])
     
-    global_model = ProposedNet().to(device)
-    local_classification_loss_record = {client_id:[] for client_id in client_id_list}
     local_mask_loss_record = {client_id:[] for client_id in client_id_list}
     local_cfmtx_bfag_record = {client_id:[] for client_id in client_id_list}
-    local_cfmtx_afag_record = {client_id:[] for client_id in client_id_list}
     global_cfmtx_record = []
     global_masking_loss = []
     clients_mask_diagonal = [None for client_id in client_id_list]
-    local_representation_storage = {client_id: None for client_id in client_id_list}
     warmup = True
+    
+    mg_done = [False for client_id in client_id_list]
+    local_mgs = [MaskGenerator() for client_id in client_id_list]    
+    global_model = ProposedNet().to(device)
     
     for cur_round in range(args.round + 1):
         print("============ Round {} ==============".format(cur_round))
+        client_id_round = np.random.choice(client_id_list, len(client_id_list)).tolist()
+        print("Client this round: ", client_id_round)
+        
         client_models = []
-        impact_factors = [len(clients_dataset[client_id])/total_sample for client_id in client_id_list]
+        impact_factors = [len(clients_dataset[client_id])/total_sample for client_id in client_id_round]
+        local_representation_storage = {client_id: None for client_id in client_id_round}
         
         if cur_round > args.warmup_round:
             warmup = False 
         
         # Local training
-        for client_id in client_id_list:
-            print("    Client {} training... ".format(client_id), end="")
-            # Training process
+        for client_id in client_id_round:
+            print("\tClient {} training: ".format(client_id), end="")
+
+            # Prepare dataset and mask
             mydataset = clients_dataset[client_id]
-            
             if clients_mask_diagonal[client_id] is None:
                 clients_mask_diagonal[client_id] = create_mask_diagonal(dim=10, dataset=mydataset)
                 
+            # Make a copy of the global model
             local_model = copy.deepcopy(global_model)
-            optimizer = torch.optim.Adam(local_model.parameters(), lr=1e-3)
-                       
+            local_model.mask_generator = local_mgs[client_id]
+
             if warmup:
                 # Train the representation space
-                print("warming up...", end="")
-                train_dataloader = DataLoader(mydataset, batch_size=2, shuffle=True, drop_last=True)
-                loss_fn = torch.nn.MSELoss()
+                print("Warming up...", end="")
                 for t in range(epochs):
-                    same, diff = representation_training(train_dataloader, local_model, loss_fn, optimizer, device)
+                    same, diff = representation_training(mydataset, local_model, device)
                 print(f"Done!")
                 
             else:
                 train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
-            
+
                 # Train the mask first
-                # TODO
+                if not mg_done[client_id]:
+                    print("\n\tMask training...", end="")
+                    for t in range(epochs):
+                        last_loss, storage = mask_training(train_dataloader, local_model, clients_mask_diagonal[client_id], device)
                     
+                    if last_loss < 0.01:
+                        mg_done[client_id] = True
+                    print(f"Done, fin. loss = {last_loss:>.3f}! ->", end="")
+                        
                 # Then train the classifier
-                # TODO
+                print("\n\tClassifier training...", end="")
+                for t in range(epochs):
+                    mean_loss = classifier_training(train_dataloader, local_model, device)
+                print(f"Done, avg. loss = {mean_loss:>.3f}!")
                 
                 # Testing the local_model to its own data
                 cfmtx = test(local_model, mydataset)
                 local_cfmtx_bfag_record[client_id].append(cfmtx)
-                
-            client_models.append(augment_model(local_model, torch.diag_embed(clients_mask_diagonal[client_id]), impact_factors[client_id], device))
             
-        print("    # Server aggregating... ", end="")
+            # Augment the classifier
+            local_model.classifier = augmented_classifier(local_model.classifier, torch.diag_embed(clients_mask_diagonal[client_id]), impact_factors[client_id], device)
+            client_models.append(local_model)
+            
+        print("\t# Server aggregating... ", end="")
         
         # Aggregation
-        # TODO
+        if warmup:
+            """
+            If in phase 01, aggregate the feature extractor only
+            """
+            global_model.feature_extractor = ProposedNet.aggregate_fe([model.feature_extractor for model in client_models], impact_factors, device)
             
-        print("    # Server testing... ", end="")
+        else:
+            """
+            If in phase 02, aggregate the mask generator and classifier
+            """
+            global_model.classifier = ProposedNet.aggregate_cl([model.classifier for model in client_models], impact_factors, device)
+            global_model.mask_generator = ProposedNet.aggregate_mg([model.mask_generator for model in client_models], impact_factors, )
+            
+            
+        print("\t# Server testing... ", end="")
         cfmtx = test(global_model, testing_data, device)
         global_cfmtx_record.append(cfmtx)
         print("Done!")
@@ -276,14 +305,13 @@ if __name__ == "__main__":
         if not warmup:
             print_cfmtx(cfmtx)
 
-        masking_loss = check_masking_loss(global_model, testing_data, torch.nn.MSELoss(), device)
+        masking_loss = check_masking_loss(global_model, testing_data, device)
         global_masking_loss.append(masking_loss)
         print("Server masking loss", masking_loss)
     
     if not Path("records/proposal4").exists():
         os.makedirs("records/proposal4")
     
-    json.dump(local_classification_loss_record,        open("records/proposal4/local_classification_loss_record.json", "w"),         cls=NumpyEncoder)
     json.dump(local_mask_loss_record,   open("records/proposal4/local_mask_loss_record.json", "w"),    cls=NumpyEncoder)
     json.dump(local_cfmtx_bfag_record,  open("records/proposal4/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
     json.dump(global_cfmtx_record,      open("records/proposal4/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)

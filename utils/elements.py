@@ -59,21 +59,21 @@ class MaskGenerator(FModule):
         return dm_x
     
 class ProposedNet(FModule):
-    def __init__(self):
+    def __init__(self, feature_extractor=None, classifier=None, mask_generator=None):
         super().__init__()
-        self.feature_extractor = FeatureExtractor()
-        self.classifier = Classifier()
-        self.mask_generator = MaskGenerator()
+        self.feature_extractor = FeatureExtractor() if feature_extractor is None else feature_extractor
+        self.classifier = Classifier() if classifier is None else classifier
+        self.mask_generator = MaskGenerator() if mask_generator is None else mask_generator
         
     def  __call__(self, x, original_mask_diagonal=None):
         return self.forward(x, original_mask_diagonal)
     
     def forward(self, x, original_mask_diagonal=None):
-        r_x = self.feature_extractor(x)
-        l_x = self.classifier(r_x)
+        r_x = self.feature_extractor(x).detach()
         dm_x = self.mask_generator(r_x).detach()
         dm_x = (dm_x > 1/10) * 1.
         m_x = torch.diag_embed(dm_x)
+        l_x = self.classifier(r_x)
         
         if original_mask_diagonal is None:
             """ When inference """
@@ -111,13 +111,13 @@ class ProposedNet(FModule):
         mirr_suro_l_x = m_x @ suro_l_x.unsqueeze(2)
         return mirr_suro_l_x.squeeze(2)
     
-    @classmethod
+    @staticmethod
     def aggregate_fe(feature_extractors, impact_factors, device):
         feature_extractors = [fe.to(device) for fe in feature_extractors]
         final_fe = fmodule._model_sum([fe * p_k for fe, p_k in zip(feature_extractors, impact_factors)])
         return final_fe
     
-    @classmethod
+    @staticmethod
     def aggregate_cl(augmented_classifiers, impact_factors, device):
         """
         This method aggregates augmented classifiers
@@ -128,7 +128,7 @@ class ProposedNet(FModule):
         final_cl = fmodule._model_sum([cl * p_k for cl, p_k in zip(augmented_classifiers, impact_factors)])
         return final_cl
     
-    @classmethod
+    @staticmethod
     def aggregate_mg(mask_generators, impact_factors, local_representation_storage, indexes, epochs=8, device="cuda"):
         """
         This method distills knowledge from each mg in mask_generators
@@ -175,7 +175,7 @@ class ProposedNet(FModule):
     
 
 @torch.no_grad()
-def augment_model(classifier: Classifier, original_mask: torch.Tensor, scale: float, device="cuda:1"):
+def augmented_classifier(classifier: Classifier, original_mask: torch.Tensor, scale: float, device="cuda:1"):
     original_mask = original_mask.to(device)
     classifier = classifier.to(device)
     
