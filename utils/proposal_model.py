@@ -27,8 +27,8 @@ class DNN_proposal(FModule):
         r_x = self.encoder(x).detach()
         l_x = self.decoder(r_x)
         dm_x = self.mask_diagonal_regenerator(r_x).detach()
+        dm_x = (dm_x > 1/10) * 1.
         m_x = torch.diag_embed(dm_x)
-        m_x = (m_x > 1/10) * 1.
         
         if original_mask_diagonal is None:
             """ When inference """
@@ -41,14 +41,6 @@ class DNN_proposal(FModule):
         # output = F.log_softmax(mirr_suro_l_x, dim=1)
         output = mirr_suro_l_x
         return output
-    
-    def mask_diagonal(self, x):
-        """
-        This function returns the mask's diagonal vector of x
-        """
-        r_x = self.encoder(x).detach()
-        dm_x = self.mask_diagonal_regenerator(r_x)
-        return dm_x
     
     def encoder(self, x):
         """
@@ -107,10 +99,11 @@ def get_ultimate_layer(model: nn.Module):
 
 
 @torch.no_grad()
-def augment_model(model: DNN_proposal, original_mask: torch.Tensor, device="cuda:1"):
+def augment_model(model: DNN_proposal, original_mask: torch.Tensor, scale: float, device="cuda:1"):
     original_mask = original_mask.to(device)
     model = model.to(device)
     
     classifier = get_ultimate_layer(model)
     classifier.copy_(original_mask @ classifier)
+    classifier.mul_(1/scale)
     return model

@@ -54,14 +54,14 @@ if __name__ == "__main__":
     epochs = args.epochs
     
     training_data = datasets.MNIST(
-        root="./data",
+        root="../data",
         train=True,
         download=False,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
     )
     
     testing_data = datasets.MNIST(
-        root="data",
+        root="../data",
         train=False,
         download=False,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),

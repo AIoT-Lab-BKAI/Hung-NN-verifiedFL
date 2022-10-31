@@ -40,14 +40,14 @@ if __name__ == "__main__":
     epochs = args.epochs
     
     training_data = datasets.MNIST(
-        root="./data",
+        root="../data",
         train=True,
         download=False,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
     )
     
     testing_data = datasets.MNIST(
-        root="data",
+        root="../data",
         train=False,
         download=False,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
@@ -55,7 +55,8 @@ if __name__ == "__main__":
     
     client_id_list = [0,1,2,3,4]
     clients_dataset = [CustomDataset(training_data, json.load(open(f"./jsons/client{client_id}.json", 'r'))) for client_id in client_id_list]
-    impact_factors = [1/len(dataset) for dataset in clients_dataset]
+    total_sample = np.sum([len(dataset) for dataset in clients_dataset])
+    
     
     global_model = NeuralNetwork().to(device)
     local_loss_record = {client_id:[] for client_id in client_id_list}
@@ -67,6 +68,7 @@ if __name__ == "__main__":
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         client_models = []
+        impact_factors = [len(clients_dataset[client_id])/total_sample for client_id in client_id_list]
         
         # Local training
         for client_id in client_id_list:
