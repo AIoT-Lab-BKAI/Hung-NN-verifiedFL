@@ -215,6 +215,7 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     global_masking_loss = []
     clients_mask_diagonal = [None for client_id in client_id_list]
+    local_representation_storage = {client_id: None for client_id in client_id_list}
     warmup = True
     
     mg_done = [False for client_id in client_id_list]
@@ -223,12 +224,12 @@ if __name__ == "__main__":
     
     for cur_round in range(args.round + 1):
         print("============ Round {} ==============".format(cur_round))
-        client_id_round = np.random.choice(client_id_list, len(client_id_list)).tolist()
+        # client_id_round = np.random.choice(client_id_list, len(client_id_list), replace=False).tolist()
+        client_id_round = client_id_list.copy()
         print("Client this round: ", client_id_round)
         
         client_models = []
         impact_factors = [len(clients_dataset[client_id])/total_sample for client_id in client_id_round]
-        local_representation_storage = {client_id: None for client_id in client_id_round}
         
         if cur_round > args.warmup_round:
             warmup = False 
@@ -258,19 +259,20 @@ if __name__ == "__main__":
 
                 # Train the mask first
                 if not mg_done[client_id]:
-                    print("\n\tMask training...", end="")
+                    print("\n\t  Mask training...", end="")
                     for t in range(epochs):
                         last_loss, storage = mask_training(train_dataloader, local_model, clients_mask_diagonal[client_id], device)
+                    local_representation_storage[client_id] = storage
                     
                     if last_loss < 0.01:
                         mg_done[client_id] = True
-                    print(f"Done, fin. loss = {last_loss:>.3f}! ->", end="")
+                    print(f"Done, fin. loss = {last_loss:>.3f}", end="")
                         
                 # Then train the classifier
-                print("\n\tClassifier training...", end="")
+                print("\n\t  Classifier training...", end="")
                 for t in range(epochs):
-                    mean_loss = classifier_training(train_dataloader, local_model, device)
-                print(f"Done, avg. loss = {mean_loss:>.3f}!")
+                    mean_loss = classifier_training(train_dataloader, local_model, clients_mask_diagonal[client_id], device)
+                print(f"Done, avg. loss = {mean_loss:>.3f}")
                 
                 # Testing the local_model to its own data
                 cfmtx = test(local_model, mydataset)
@@ -280,9 +282,8 @@ if __name__ == "__main__":
             local_model.classifier = augmented_classifier(local_model.classifier, torch.diag_embed(clients_mask_diagonal[client_id]), impact_factors[client_id], device)
             client_models.append(local_model)
             
-        print("\t# Server aggregating... ", end="")
-        
         # Aggregation
+        print("\t# Server aggregating... ")
         if warmup:
             """
             If in phase 01, aggregate the feature extractor only
@@ -294,9 +295,11 @@ if __name__ == "__main__":
             If in phase 02, aggregate the mask generator and classifier
             """
             global_model.classifier = ProposedNet.aggregate_cl([model.classifier for model in client_models], impact_factors, device)
-            global_model.mask_generator = ProposedNet.aggregate_mg([model.mask_generator for model in client_models], impact_factors, )
-            
-            
+            global_model.mask_generator = ProposedNet.aggregate_mg(global_model.mask_generator, [model.mask_generator for model in client_models],
+                                                                   local_representation_storage, epochs=epochs, device=device)
+        # print("Done!")
+        
+        # Testing
         print("\t# Server testing... ", end="")
         cfmtx = test(global_model, testing_data, device)
         global_cfmtx_record.append(cfmtx)

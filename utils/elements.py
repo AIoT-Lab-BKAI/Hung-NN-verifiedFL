@@ -1,9 +1,9 @@
-from numpy import double
 import torch
 import torch.nn.functional as F
 from torch import nn
 from utils.fmodule import FModule, get_module_from_model
 import utils.fmodule as fmodule
+import numpy as np
 
 def init_weights(m):
     if isinstance(m, nn.Linear):
@@ -53,8 +53,8 @@ class MaskGenerator(FModule):
         This function generate a mask's diagonal vector for each element in r_x,
         returning shape of b x 10
         """
-        dm_x = F.relu(self.mg_fc1(r_x))
-        dm_x = torch.softmax(self.mg_fc2(dm_x), dim=1)
+        dm_x = F.relu(self.fc3(r_x))
+        dm_x = torch.softmax(self.fc4(dm_x), dim=1)
         dm_x = dm_x.view(r_x.shape[0], 10)
         return dm_x
     
@@ -129,49 +129,47 @@ class ProposedNet(FModule):
         return final_cl
     
     @staticmethod
-    def aggregate_mg(mask_generators, impact_factors, local_representation_storage, indexes, epochs=8, device="cuda"):
+    def aggregate_mg(global_mask_generator: MaskGenerator, mask_generators, local_representation_storage, epochs=8, device="cuda"):
         """
         This method distills knowledge from each mg in mask_generators
         to the aggregated model
         Args:
-            mask_generators: list of Mask generator whose client's id is indexes
+            mask_generators: list of Mask generator
             local_representation_storage: dictionary
                 {
-                    client_id: [representations]
+                    client_id: [(rep_batch1, mask1), (rep_batch2, mask2), ...]
                 }
+        Note:
+            The mask generators must map to the corresponding storage
         """
         mask_generators = [mg.to(device) for mg in mask_generators]
-        final_mg = fmodule._model_sum([mg * pk for mg, pk in zip(mask_generators, impact_factors)]).to(device)
+        global_mask_generator = global_mask_generator.to(device)
         
-        distill_repr = []
-        teacher_mask = []
+        optimizer = torch.optim.Adam(global_mask_generator.parameters(), lr=1e-3)
         
-        with torch.no_grad():
-            for i in range(len(indexes)):
-                client_id = indexes[i]
-                mg = mask_generators[i]
-                representations = local_representation_storage[client_id]
+        total_transfer_data = []
+        for client_id in local_representation_storage.keys():
+            transfer_data = local_representation_storage[client_id]
+            total_transfer_data += transfer_data
                 
-                distill_repr.append(representations)
-                teacher_mask.append(mg(representations))            
-        
-        distill_repr = torch.cat(distill_repr).to(device)
-        teacher_mask = torch.cat(teacher_mask).to(device)
-        
-        optimizer = torch.optim.SGD(final_mg.parameters(), lr=1e-3)
-        for e in epochs:
-            student_mask = final_mg(distill_repr)
-            loss = torch.sum(torch.pow(student_mask - teacher_mask, 2))/student_mask.shape[0]
-            
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        for e in range(epochs):
+            losses = []
+            for rep, mask in total_transfer_data:
+                rep, mask = rep.to(device), mask.to(device)
+                student_mask = global_mask_generator(rep)
+                loss = torch.sum(torch.pow(student_mask - mask, 2))/student_mask.shape[0]
 
-            student_mask = (student_mask > 1/10) * 1.0
-            loss = torch.sum(torch.abs(student_mask - teacher_mask))/student_mask.shape[0]
-            print(f"\tServer mask transferring epoch {e}, Avg. loss {loss.detach().item():>.3f}")
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                student_mask = (student_mask > 1/10) * 1.0
+                loss = torch.sum(torch.abs(student_mask - mask))/student_mask.shape[0]
+                losses.append(loss.item())
+                
+            print(f"\t   Server mask transferring epoch {e}, Avg. loss {np.mean(losses):>.3f}")
     
-        return final_mg
+        return global_mask_generator
     
 
 @torch.no_grad()
