@@ -15,21 +15,27 @@ def get_ultimate_layer(model: nn.Module):
     return penul
 
 class FeatureExtractor(FModule):
-    def __init__(self, input_dim = 784, output_dim = 100):
+    def __init__(self, output_dim = 512):
         super().__init__()
-        self.fc1 = nn.Linear(input_dim, output_dim)
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, padding=2)
+        self.fc1 = nn.Linear(3136, output_dim)
         self.apply(init_weights)
         
     def forward(self, x):
         """
         This function returns the representation of x
         """
-        r_x = torch.flatten(x, 1)
-        r_x = torch.sigmoid(self.fc1(r_x))
+        x = x.view((x.shape[0],28,28))
+        x = x.unsqueeze(1)
+        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+        x = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
+        r_x = torch.sigmoid(self.fc1(x))
         return r_x
     
 class Classifier(FModule): 
-    def __init__(self, input_dim = 100, output_dim = 10):
+    def __init__(self, input_dim = 512, output_dim = 10):
         super().__init__()
         self.fc2 = nn.Linear(input_dim, output_dim)
         self.apply(init_weights)
