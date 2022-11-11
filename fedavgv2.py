@@ -73,29 +73,6 @@ def training(dataset, local_model:Model, global_model:Model, pk, round, batch_si
         np.mean(different_class_dis) if len(different_class_dis) else 0, \
         np.mean(inter_client_losses) if len(inter_client_losses) else 0
 
-
-# def classification_training(dataset, local_model:Model, batch_size, device):
-#     local_model = local_model.to(device)
-#     local_model.train()
-    
-#     dataloader = DataLoader(dataset, batch_size, shuffle=True, drop_last=False)
-#     optimizer = torch.optim.Adam(local_model.parameters(), lr=1e-3)
-#     loss_fn = torch.nn.CrossEntropyLoss()
-    
-#     epoch_loss = []
-#     for batch, (X, y) in enumerate(dataloader):
-#         X, y = X.to(device), y.to(device)
-#         rep = local_model.feature_extractor(X)
-#         pred = local_model.classifier(rep)
-        
-#         loss = loss_fn(pred, y)
-        
-#         optimizer.zero_grad()
-#         loss.backward()
-#         optimizer.step()
-#         epoch_loss.append(loss.detach().item())
-    
-#     return np.mean(epoch_loss)
     
 
 if __name__ == "__main__":
@@ -110,16 +87,16 @@ if __name__ == "__main__":
     epochs = args.epochs
     
     training_data = datasets.MNIST(
-        root="../data",
+        root="data",
         train=True,
         download=False,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
     )
     
     testing_data = datasets.MNIST(
-        root="../data",
+        root="data",
         train=False,
-        download=False,
+        download=True,
         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
     )
     
