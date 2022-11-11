@@ -23,6 +23,47 @@ def batch_similarity(a, b):
     return (a @ b.T)/ (torch.norm(a, dim=1, keepdim=True) @ torch.norm(b, dim=1, keepdim=True).T)
 
 
+def contrastive_training(contrastive_loader, model, loss_fn, optimizer, device, contrastive):
+    model = model.to(device)
+    model.train()
+    
+    same_class_dis = []
+    different_class_dis = []
+    classification_loss = []
+            
+    for batch, (X, y) in enumerate(contrastive_loader):
+        X, y = X.to(device), y.to(device)
+        # Compute prediction error
+        rep = model.encoder(X)
+        rep = rep / torch.norm(rep, dim=1, keepdim=True)
+        pred = model.decoder(rep)
+        
+        simi_loss = 0
+        for i in range(0, rep.shape[0] - 1, 2):
+            similarity = rep[i] @ rep[i+1]
+            if y[i].detach().item() == y[i+1].detach().item():
+                simi_loss += 1 - similarity
+                same_class_dis.append(similarity.detach().item())
+            else:
+                simi_loss += similarity
+                different_class_dis.append(similarity.detach().item())
+        
+        loss = loss_fn(pred, y)
+        classification_loss.append(loss.detach().item())
+        
+        if contrastive:
+            loss += 0.01 * simi_loss * 2 / rep.shape[0]
+        
+        # Backpropagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+    return np.mean(classification_loss), \
+        np.mean(same_class_dis) if len(same_class_dis) else 0, \
+        np.mean(different_class_dis) if len(different_class_dis) else 0, \
+            
+
 def train_representation(dataloader, model, condense_representation):
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)

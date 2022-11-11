@@ -31,7 +31,8 @@ class FeatureExtractor(FModule):
         x = F.max_pool2d(F.relu(self.conv1(x)), 2)
         x = F.max_pool2d(F.relu(self.conv2(x)), 2)
         x = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
-        r_x = torch.sigmoid(self.fc1(x))
+        r_x = F.relu(self.fc1(x))
+        r_x = r_x / torch.norm(r_x, dim=1, keepdim=True)
         return r_x
     
 class Classifier(FModule): 
