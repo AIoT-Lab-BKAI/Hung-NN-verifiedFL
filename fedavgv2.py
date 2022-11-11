@@ -1,9 +1,10 @@
 from utils.train_smt import test, print_cfmtx, NumpyEncoder
+from utils.reader import read_jsons
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.dataloader import CustomDataset
 from torchvision import datasets, transforms
-from utils.proposal_6.model import Model
+from utils.model import Model
 from utils import fmodule
 import torch, argparse, json, os, numpy as np, copy
 
@@ -102,30 +103,18 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--round", type=int, default=1)
-    parser.add_argument("--contrastive", type=int, required=False, default=0)
+    parser.add_argument("--contrastive", type=int, default=0)
+    parser.add_argument("--dataset", type=str, default="mnist")
+    parser.add_argument("--exp_folder", type=str, default="./jsons/baseline/simple_3")
     
     args = parser.parse_args()
+    print(args)
     batch_size = args.batch_size
     epochs = args.epochs
     
-    training_data = datasets.MNIST(
-        root="data",
-        train=True,
-        download=False,
-        transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-    )
-    
-    testing_data = datasets.MNIST(
-        root="data",
-        train=False,
-        download=True,
-        transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-    )
-    
-    client_id_list = [0,1,2,3,4]
-    clients_dataset = [CustomDataset(training_data, json.load(open(f"./jsons/client{client_id}.json", 'r'))) for client_id in client_id_list]
-    total_sample = np.sum([len(dataset) for dataset in clients_dataset])
-    
+    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset = read_jsons(args.exp_folder, args.dataset)
+    client_id_list = [i for i in range(num_client)]
+    total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
     global_model = Model().to(device)
     local_models = [None for client_id in client_id_list]
@@ -139,7 +128,7 @@ if __name__ == "__main__":
     
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
-        impact_factors = [len(clients_dataset[client_id])/total_sample for client_id in client_id_list]
+        impact_factors = [len(clients_training_dataset[client_id])/total_sample for client_id in client_id_list]
         
         # Local training
         for client_id in client_id_list:
@@ -150,7 +139,9 @@ if __name__ == "__main__":
             The purpose is to train the feature extractor accross the clients,
             but the classifier is personalized
             """
-            mydataset = clients_dataset[client_id]   
+            my_training_dataset = clients_training_dataset[client_id]
+            my_testing_dataset = clients_testing_dataset[client_id]
+               
             if local_models[client_id] is None: 
                 local_models[client_id] = copy.deepcopy(global_model)
             else:
@@ -160,19 +151,20 @@ if __name__ == "__main__":
             print("\n\t  Local training...", end="")
             epoch_loss, same_ , diff_, inter_ = [], [], [], []
             for t in range(epochs):
-                classification_loss, same, diff, inter = training(mydataset, local_models[client_id], global_model, impact_factors[client_id], 
+                classification_loss, same, diff, inter = training(my_training_dataset, local_models[client_id], global_model, impact_factors[client_id], 
                                                             t, batch_size, args.contrastive > 0, device)
                 same_.append(same)
                 diff_.append(diff)
                 inter_.append(inter)
                 epoch_loss.append(classification_loss)
+                
             print(f"Done! Aver. loss: {np.mean(epoch_loss):>.3f}, same {np.mean(same_):>.3f}, diff {np.mean(diff_):>.3f}, inter {np.mean(inter_):>.3f}")
             local_constrastive_info[client_id]["same"].append(np.mean(same_))
             local_constrastive_info[client_id]["diff"].append(np.mean(diff_))
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
             # Testing the local_model to its own data
-            cfmtx = test(local_models[client_id], mydataset)
+            cfmtx = test(local_models[client_id], my_testing_dataset)
             local_cfmtx_bfag_record[client_id].append(cfmtx)
             
         print("    # Server aggregating... ", end="")
@@ -181,9 +173,10 @@ if __name__ == "__main__":
         print("Done!")
         
         print("    # Server testing... ", end="")
-        cfmtx = test(global_model, testing_data)
+        cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
         print("Done!")
+        
         np.set_printoptions(precision=2, suppress=True)
         print_cfmtx(cfmtx)
         

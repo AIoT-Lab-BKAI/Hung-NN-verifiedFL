@@ -48,20 +48,3 @@ class Classifier(FModule):
         l_x = self.fc2(r_x)
         return l_x
     
-class MaskGenerator(FModule):
-    def __init__(self, input_dim = 100, mid_dim = 128, output_dim = 10):
-        super().__init__()
-        self.fc3 = nn.Linear(input_dim, mid_dim)
-        self.fc4 = nn.Linear(mid_dim, output_dim)
-        self.apply(init_weights)
-    
-    def forward(self, r_x):
-        """
-        This function generate a mask's diagonal vector for each element in r_x,
-        returning shape of b x 10
-        """
-        dm_x = F.relu(self.fc3(r_x))
-        dm_x = torch.softmax(self.fc4(dm_x), dim=1)
-        dm_x = dm_x.view(r_x.shape[0], 10)
-        return dm_x
-    
