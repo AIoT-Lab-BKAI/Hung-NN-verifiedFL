@@ -73,7 +73,29 @@ def training(dataset, local_model:Model, global_model:Model, pk, round, batch_si
         np.mean(different_class_dis) if len(different_class_dis) else 0, \
         np.mean(inter_client_losses) if len(inter_client_losses) else 0
 
+
+@torch.no_grad()
+def check_global_contrastive(model: Model, dataset, device):
+    model = model.to(device)
+    dataloder = DataLoader(dataset, batch_size=8, shuffle=True, drop_last=False)
     
+    same_class_dis = []
+    different_class_dis = []
+    
+    for X, y in dataloder:
+        X, y = X.to(device), y.to(device)
+        
+        rep = model.feature_extractor(X)
+        for i in range(0, rep.shape[0] - 1, 2):
+            similarity = rep[i] @ rep[i+1]
+            if y[i].detach().item() == y[i+1].detach().item():
+                same_class_dis.append(similarity.detach().item())
+            else:
+                different_class_dis.append(similarity.detach().item())
+    
+    return np.mean(same_class_dis) if len(same_class_dis) else 0, \
+            np.mean(different_class_dis) if len(different_class_dis) else 0, \
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
