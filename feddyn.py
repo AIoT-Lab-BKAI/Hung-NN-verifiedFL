@@ -59,9 +59,10 @@ if __name__ == "__main__":
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
     local_acc_afag_record = {client_id:[] for client_id in client_id_list}
+    global_constrastive_info = {"same": [], "diff": []}
+    
     global_cfmtx_record = []
     U_cfmtx_record = []
-    
     
     server_h = global_model.zeros_like()
     clients_gradLs = [global_model.zeros_like() for client_id in client_id_list]
@@ -106,7 +107,11 @@ if __name__ == "__main__":
         print("    # Server testing... ", end="")
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
-        print(f"Done! Avg. acc {acc:>.3f}")
+        
+        same, diff = check_global_contrastive(global_model, global_testing_dataset, device)
+        global_constrastive_info["same"].append(same)
+        global_constrastive_info["diff"].append(diff)
+        print(f"Done! Avg. acc {acc:>.3f}, same {same:>.3f}, diff {diff:>.3f}")
 
         
     if not Path(f"records/{args.exp_folder}/feddyn").exists():
@@ -114,4 +119,7 @@ if __name__ == "__main__":
     
     json.dump(local_loss_record,        open(f"records/{args.exp_folder}/feddyn/local_loss_record.json", "w"),         cls=NumpyEncoder)
     json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/feddyn/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/feddyn/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
     json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/feddyn/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(global_constrastive_info, open(f"records/{args.exp_folder}/feddyn/global_constrastive_info.json", "w"),  cls=NumpyEncoder)
+    

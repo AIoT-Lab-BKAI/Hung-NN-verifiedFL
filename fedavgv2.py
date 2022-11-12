@@ -105,11 +105,6 @@ if __name__ == "__main__":
         for client_id in client_id_list:
             print("    Client {} training... ".format(client_id), end="")
             
-            """
-            Each client has a separate model, personalized for that dataset
-            The purpose is to train the feature extractor accross the clients,
-            but the classifier is personalized
-            """
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
                
