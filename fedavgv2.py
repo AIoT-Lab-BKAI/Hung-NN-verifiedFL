@@ -1,11 +1,13 @@
 from utils.train_smt import test, print_cfmtx, NumpyEncoder
 from utils.reader import read_jsons
+from utils.parser import read_arguments
+from utils.model import Model
+from utils.dataloader import CustomDataset
+from utils import fmodule
+
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.dataloader import CustomDataset
 from torchvision import datasets, transforms
-from utils.model import Model
-from utils import fmodule
 import torch, argparse, json, os, numpy as np, copy
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -99,15 +101,7 @@ def check_global_contrastive(model: Model, dataset, device):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=4)
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--round", type=int, default=1)
-    parser.add_argument("--contrastive", type=int, default=0)
-    parser.add_argument("--dataset", type=str, default="mnist")
-    parser.add_argument("--exp_folder", type=str, default="./jsons/baseline/simple_3")
-    
-    args = parser.parse_args()
+    args = read_arguments()
     print(args)
     batch_size = args.batch_size
     epochs = args.epochs

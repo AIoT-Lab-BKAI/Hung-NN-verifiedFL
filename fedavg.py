@@ -1,4 +1,7 @@
 from utils.train_smt import test, print_cfmtx, NumpyEncoder
+from utils.reader import read_jsons
+from utils.parser import read_arguments
+
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.dataloader import CustomDataset
@@ -31,32 +34,14 @@ def train(dataloader, model, loss_fn, optimizer):
     return losses
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=4)
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--round", type=int, default=1)
-    args = parser.parse_args()
+    args = read_arguments()
+    print(args)
     batch_size = args.batch_size
     epochs = args.epochs
     
-    training_data = datasets.MNIST(
-        root="../data",
-        train=True,
-        download=False,
-        transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-    )
-    
-    testing_data = datasets.MNIST(
-        root="../data",
-        train=False,
-        download=False,
-        transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-    )
-    
-    client_id_list = [0,1,2,3,4]
-    clients_dataset = [CustomDataset(training_data, json.load(open(f"./jsons/client{client_id}.json", 'r'))) for client_id in client_id_list]
-    total_sample = np.sum([len(dataset) for dataset in clients_dataset])
-    
+    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset = read_jsons(args.exp_folder, args.dataset)
+    client_id_list = [i for i in range(num_client)]
+    total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
     global_model = NeuralNetwork().to(device)
     local_loss_record = {client_id:[] for client_id in client_id_list}
@@ -68,14 +53,16 @@ if __name__ == "__main__":
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         client_models = []
-        impact_factors = [len(clients_dataset[client_id])/total_sample for client_id in client_id_list]
+        impact_factors = [len(clients_training_dataset[client_id])/total_sample for client_id in client_id_list]
         
         # Local training
         for client_id in client_id_list:
             print("    Client {} training... ".format(client_id), end="")
             # Training process
-            mydataset = clients_dataset[client_id]
-            train_dataloader = DataLoader(mydataset, batch_size=batch_size, shuffle=True, drop_last=False)
+            my_training_dataset = clients_training_dataset[client_id]
+            my_testing_dataset = clients_testing_dataset[client_id]
+            
+            train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             
             local_model = copy.deepcopy(global_model)
             loss_fn = torch.nn.CrossEntropyLoss()
@@ -89,7 +76,7 @@ if __name__ == "__main__":
             client_models.append(local_model)
             
             # Testing the local_model to its own data
-            cfmtx = test(local_model, mydataset)
+            cfmtx = test(local_model, my_testing_dataset)
             local_cfmtx_bfag_record[client_id].append(cfmtx)
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}")
             
@@ -99,7 +86,7 @@ if __name__ == "__main__":
         print("Done!")
         
         print("    # Server testing... ", end="")
-        cfmtx = test(global_model, testing_data)
+        cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
         print("Done!")
         np.set_printoptions(precision=2, suppress=True)
