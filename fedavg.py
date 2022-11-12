@@ -92,9 +92,9 @@ if __name__ == "__main__":
         np.set_printoptions(precision=2, suppress=True)
         print_cfmtx(cfmtx)
         
-    if not Path("records/fedavg").exists():
-        os.makedirs("records/fedavg")
+    if not Path(f"records/{args.exp_folder}/fedavg").exists():
+        os.makedirs(f"records/{args.exp_folder}/fedavg")
     
-    json.dump(local_loss_record,        open("records/fedavg/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_cfmtx_bfag_record,  open("records/fedavg/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open("records/fedavg/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/fedavg/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_cfmtx_bfag_record,  open(f"records/{args.exp_folder}/fedavg/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fedavg/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)

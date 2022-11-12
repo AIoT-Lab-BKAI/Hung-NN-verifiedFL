@@ -119,6 +119,7 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     local_constrastive_info = {client_id:{"same": [], "diff": []} for client_id in client_id_list}
+    global_constrastive_info = {"same": [], "diff": []}
     
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
@@ -167,17 +168,23 @@ if __name__ == "__main__":
         print("Done!")
         
         print("    # Server testing... ", end="")
-        cfmtx = test(global_model, global_testing_dataset)
+        cfmtx = test(global_model, global_testing_dataset, device)
         global_cfmtx_record.append(cfmtx)
+        
+        same, diff = check_global_contrastive(global_model, global_testing_dataset, device)
+        global_constrastive_info["same"].append(same)
+        global_constrastive_info["diff"].append(diff)
         print("Done!")
         
         np.set_printoptions(precision=2, suppress=True)
         print_cfmtx(cfmtx)
-        
-    if not Path("records/fedavgv2").exists():
-        os.makedirs("records/fedavgv2")
     
-    json.dump(local_loss_record,        open("records/fedavgv2/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_cfmtx_bfag_record,  open("records/fedavgv2/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open("records/fedavgv2/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
-    json.dump(local_constrastive_info,  open("records/fedavgv2/local_constrastive_info.json", "w"),   cls=NumpyEncoder)
+    algo_name = "fedavgv2" + f"_contrastive_{args.contrastive}"
+    if not Path(f"records/{args.exp_folder}/{algo_name}").exists():
+        os.makedirs(f"records/{args.exp_folder}/{algo_name}")
+    
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/{algo_name}/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_cfmtx_bfag_record,  open(f"records/{args.exp_folder}/{algo_name}/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/{algo_name}/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_constrastive_info,  open(f"records/{args.exp_folder}/{algo_name}/local_constrastive_info.json", "w"),   cls=NumpyEncoder)
+    json.dump(global_constrastive_info, open(f"records/{args.exp_folder}/{algo_name}/global_constrastive_info.json", "w"),  cls=NumpyEncoder)

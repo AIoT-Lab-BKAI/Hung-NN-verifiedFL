@@ -99,9 +99,9 @@ if __name__ == "__main__":
         np.set_printoptions(precision=2, suppress=True)
         print_cfmtx(cfmtx)
         
-        if not Path("records/fedprox").exists():
-            os.makedirs("records/fedprox")
+        if not Path(f"records/{args.exp_folder}/fedprox").exists():
+            os.makedirs(f"records/{args.exp_folder}/fedprox")
         
-        json.dump(local_loss_record,        open("records/fedprox/local_loss_record.json", "w"),         cls=NumpyEncoder)
-        json.dump(local_cfmtx_bfag_record,  open("records/fedprox/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
-        json.dump(global_cfmtx_record,      open("records/fedprox/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+        json.dump(local_loss_record,        open(f"records/{args.exp_folder}/fedprox/local_loss_record.json", "w"),         cls=NumpyEncoder)
+        json.dump(local_cfmtx_bfag_record,  open(f"records/{args.exp_folder}/fedprox/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
+        json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fedprox/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
