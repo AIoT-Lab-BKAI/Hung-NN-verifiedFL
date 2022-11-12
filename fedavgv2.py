@@ -27,7 +27,7 @@ def training(dataset, local_model:Model, global_model:Model, pk, round, batch_si
         ex_model.freeze_grad()
     
     dataloder = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=False)
-    optimizer = torch.optim.Adam(local_model.parameters(), lr=1e-3)
+    optimizer = torch.optim.SGD(local_model.parameters(), lr=1e-3)
     loss_fn = torch.nn.CrossEntropyLoss()
     
     for batch, (X, y) in enumerate(dataloder):
@@ -63,7 +63,7 @@ def training(dataset, local_model:Model, global_model:Model, pk, round, batch_si
         
         # Backpropagation
         if contrastive:
-            loss += 0.01 * simi_loss
+            loss += 0.1 * simi_loss
         
         optimizer.zero_grad()
         loss.backward()

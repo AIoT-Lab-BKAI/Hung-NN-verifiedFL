@@ -81,7 +81,7 @@ if __name__ == "__main__":
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             loss_fn = torch.nn.CrossEntropyLoss()
-            optimizer = torch.optim.Adam(local_model.parameters(), lr=1e-3)
+            optimizer = torch.optim.SGD(local_model.parameters(), lr=1e-3)
             
             epoch_loss = []
             K = 0

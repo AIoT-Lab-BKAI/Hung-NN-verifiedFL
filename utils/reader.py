@@ -6,45 +6,45 @@ def read_jsons(folder_path, dataset="mnist"):
     
     if dataset == "mnist":
         training_data = datasets.MNIST(
-            root="../data",
+            root="./data",
             train=True,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
         )
         testing_data = datasets.MNIST(
-            root="../data",
+            root="./data",
             train=False,
-            download=True,
+            download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
         )
         
     elif dataset == "cifar10":
         training_data = datasets.CIFAR10(
-            root="../data",
+            root="./data",
             train=True,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
         )
 
         testing_data = datasets.CIFAR10(
-            root="../data",
+            root="./data",
             train=False,
-            download=True,
+            download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
         )
         
     elif dataset == "cifar100":
         training_data = datasets.CIFAR100(
-            root="../data",
+            root="./data",
             train=True,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
         )
 
         testing_data = datasets.CIFAR100(
-            root="../data",
+            root="./data",
             train=False,
-            download=True,
+            download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
         )
         

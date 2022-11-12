@@ -49,7 +49,7 @@ def check_global_contrastive(model, dataset, device):
         
         rep = model.get_representation(X)
         for i in range(0, rep.shape[0] - 1, 2):
-            similarity = rep[i] @ rep[i+1]
+            similarity = rep[i] @ rep[i+1] / (torch.norm(rep[i]) * torch.norm(rep[i+1]))
             if y[i].detach().item() == y[i+1].detach().item():
                 same_class_dis.append(similarity.detach().item())
             else:
