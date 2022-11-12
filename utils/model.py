@@ -15,3 +15,6 @@ class Model(FModule):
         r_x = self.feature_extractor(x)
         l_x = self.classifier(r_x)
         return l_x
+    
+    def get_representation(self, x):
+        return self.feature_extractor(x)

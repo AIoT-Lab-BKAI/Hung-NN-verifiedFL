@@ -1,14 +1,12 @@
-from utils.train_smt import test, print_cfmtx, NumpyEncoder
+from utils.train_smt import test, print_cfmtx, NumpyEncoder, check_global_contrastive
 from utils.reader import read_jsons
 from utils.parser import read_arguments
 
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.dataloader import CustomDataset
-from torchvision import datasets, transforms
 from utils.base_model import NeuralNetwork
 from utils import fmodule
-import torch, argparse, json, os, numpy as np, copy
+import torch, json, os, numpy as np, copy
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -52,8 +50,8 @@ if __name__ == "__main__":
     
     global_model = NeuralNetwork().to(device)
     local_loss_record = {client_id:[] for client_id in client_id_list}
-    local_cfmtx_bfag_record = {client_id:[] for client_id in client_id_list}
-    local_cfmtx_afag_record = {client_id:[] for client_id in client_id_list}
+    local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
+    local_acc_afag_record = {client_id:[] for client_id in client_id_list}
     global_cfmtx_record = []
     U_cfmtx_record = []
     
@@ -69,11 +67,14 @@ if __name__ == "__main__":
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
             
-            train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
-            
             local_model = copy.deepcopy(global_model)
+            # Testing the global_model to the local data
+            acc, cfmtx = test(global_model, my_testing_dataset)
+            local_acc_afag_record[client_id].append(acc)
+            
+            train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             loss_fn = torch.nn.CrossEntropyLoss()
-            optimizer = torch.optim.SGD(local_model.parameters(), lr=1e-3)
+            optimizer = torch.optim.Adam(local_model.parameters(), lr=1e-3)
             
             epoch_loss = []
             for t in range(epochs):
@@ -84,7 +85,7 @@ if __name__ == "__main__":
             
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)
-            local_cfmtx_bfag_record[client_id].append(cfmtx)
+            local_acc_bfag_record[client_id].append(acc)
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
             
         print("    # Server aggregating... ", end="")
@@ -99,9 +100,9 @@ if __name__ == "__main__":
         # np.set_printoptions(precision=2, suppress=True)
         # print_cfmtx(cfmtx)
         
-        if not Path(f"records/{args.exp_folder}/fedprox").exists():
-            os.makedirs(f"records/{args.exp_folder}/fedprox")
-        
-        json.dump(local_loss_record,        open(f"records/{args.exp_folder}/fedprox/local_loss_record.json", "w"),         cls=NumpyEncoder)
-        json.dump(local_cfmtx_bfag_record,  open(f"records/{args.exp_folder}/fedprox/local_cfmtx_bfag_record.json", "w"),   cls=NumpyEncoder)
-        json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fedprox/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    if not Path(f"records/{args.exp_folder}/fedprox").exists():
+        os.makedirs(f"records/{args.exp_folder}/fedprox")
+    
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/fedprox/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/fedprox/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fedprox/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)

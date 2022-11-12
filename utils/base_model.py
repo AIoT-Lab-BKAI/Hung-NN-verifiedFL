@@ -34,3 +34,6 @@ class NeuralNetwork(FModule):
         r_x = self.encoder(x)
         output = self.decoder(r_x)
         return output, r_x
+    
+    def get_representation(self, x):
+        return self.encoder(x)
