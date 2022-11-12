@@ -143,7 +143,7 @@ if __name__ == "__main__":
                 local_models[client_id].feature_extractor = copy.deepcopy(global_model.feature_extractor)
             
             # Training process
-            print("\n\t  Local training...", end="")
+            # print("\n\t  Local training...", end="")
             epoch_loss, same_ , diff_, inter_ = [], [], [], []
             for t in range(epochs):
                 classification_loss, same, diff, inter = training(my_training_dataset, local_models[client_id], global_model, impact_factors[client_id], 
@@ -153,7 +153,6 @@ if __name__ == "__main__":
                 inter_.append(inter)
                 epoch_loss.append(classification_loss)
                 
-            print(f"Done! Aver. loss: {np.mean(epoch_loss):>.3f}, same {np.mean(same_):>.3f}, diff {np.mean(diff_):>.3f}, inter {np.mean(inter_):>.3f}")
             local_constrastive_info[client_id]["same"].append(np.mean(same_))
             local_constrastive_info[client_id]["diff"].append(np.mean(diff_))
             local_loss_record[client_id].append(np.mean(epoch_loss))
@@ -161,6 +160,7 @@ if __name__ == "__main__":
             # Testing the local_model to its own data
             cfmtx = test(local_models[client_id], my_testing_dataset)
             local_cfmtx_bfag_record[client_id].append(cfmtx)
+            print(f"Done! Aver. loss: {np.mean(epoch_loss):>.3f}, same {np.mean(same_):>.3f}, diff {np.mean(diff_):>.3f}, inter {np.mean(inter_):>.3f}, acc {np.mean(np.diag(cfmtx)):>.3f}")
             
         print("    # Server aggregating... ", end="")
         # Aggregation
@@ -174,10 +174,10 @@ if __name__ == "__main__":
         same, diff = check_global_contrastive(global_model, global_testing_dataset, device)
         global_constrastive_info["same"].append(same)
         global_constrastive_info["diff"].append(diff)
-        print("Done!")
+        print(f"Done! Avg. acc {np.mean(np.diag(cfmtx)):>.3f}, same {same:>.3f}, diff {diff:>.3f}")
         
-        np.set_printoptions(precision=2, suppress=True)
-        print_cfmtx(cfmtx)
+        # np.set_printoptions(precision=2, suppress=True)
+        # print_cfmtx(cfmtx)
     
     algo_name = "fedavgv2" + f"_contrastive_{args.contrastive}"
     if not Path(f"records/{args.exp_folder}/{algo_name}").exists():

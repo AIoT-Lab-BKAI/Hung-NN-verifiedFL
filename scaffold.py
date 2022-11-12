@@ -101,7 +101,7 @@ if __name__ == "__main__":
             # Testing the local_model to its own data
             cfmtx = test(local_model, my_testing_dataset)
             local_cfmtx_bfag_record[client_id].append(cfmtx)
-            print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}")
+            print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {np.mean(np.diag(cfmtx)):>.3f}")
         
         print("    # Server aggregating... ", end="")
         # Server aggregation
@@ -111,9 +111,9 @@ if __name__ == "__main__":
         print("    # Server testing... ", end="")
         cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
-        print("Done!")
-        np.set_printoptions(precision=2, suppress=True)
-        print_cfmtx(cfmtx)
+        print(f"Done! Avg. acc {np.mean(np.diag(cfmtx)):>.3f}")
+        # np.set_printoptions(precision=2, suppress=True)
+        # print_cfmtx(cfmtx)
         
         if not Path(f"records/{args.exp_folder}/scaffold").exists():
             os.makedirs(f"records/{args.exp_folder}/scaffold")
