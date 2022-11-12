@@ -40,7 +40,7 @@ def test(model, testing_data, device="cuda"):
     down = np.sum(cfmtx, axis=1, keepdims=True)
     down[down == 0] = 1
     cfmtx = cfmtx/down
-    return cfmtx
+    return acc, cfmtx
 
 
 class NumpyEncoder(json.JSONEncoder):
