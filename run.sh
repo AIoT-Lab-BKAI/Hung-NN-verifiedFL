@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=0 python fedavgv2.py --epochs 8 --batch_size 4 --round 100 --contrastive 0 --exp_folder "./jsons/baseline/simple_5"
+CUDA_VISIBLE_DEVICES=0 python fedavgv2.py --epochs 8 --batch_size 4 --round 100 --contrastive 1 --exp_folder "./jsons/baseline/simple_5"
 
 # CUDA_VISIBLE_DEVICES=0 python fedavgv2.py --epochs 8 --batch_size 4 --round 100 --contrastive 1
 
