@@ -63,4 +63,9 @@ def read_jsons(folder_path, dataset="mnist"):
         training_set.append(CustomDataset(training_data, training_jsons[client_id]))
         testing_set.append(CustomDataset(testing_data, testing_jsons[client_id]))
         
-    return num_client, training_set, testing_set, testing_data
+    singleset_json = []
+    for client_id in training_jsons.keys():
+        singleset_json += training_jsons[client_id]
+    singleset = CustomDataset(training_data, singleset_json)
+        
+    return num_client, training_set, testing_set, testing_data, singleset

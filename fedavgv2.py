@@ -43,7 +43,7 @@ def training(dataset, local_model:Model, global_model:Model, pk, round, batch_si
         """
         simi_loss = 0
         for i in range(0, rep.shape[0] - 1, 2):
-            similarity = rep[i] @ rep[i+1]
+            similarity = (rep[i] @ rep[i+1]) / (torch.norm(rep[i]).detach() * torch.norm(rep[i+1]).detach())
             if y[i].detach().item() == y[i+1].detach().item():
                 simi_loss += 1 - similarity
                 same_class_dis.append(similarity.detach().item())
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     batch_size = args.batch_size
     epochs = args.epochs
     
-    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset = read_jsons(args.exp_folder, args.dataset)
+    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.exp_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     local_constrastive_info = {client_id:{"same": [], "diff": []} for client_id in client_id_list}
-    global_constrastive_info = {"same": [], "diff": []}
+    global_constrastive_info = {"same": [], "diff": [], "sim_mtx": []}
     
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
@@ -141,9 +141,10 @@ if __name__ == "__main__":
         acc, cfmtx = test(global_model, global_testing_dataset, device)
         global_cfmtx_record.append(cfmtx)
         
-        same, diff = check_global_contrastive(global_model, global_testing_dataset, device)
+        same, diff, sim_mtx = check_global_contrastive(global_model, singleset, device)
         global_constrastive_info["same"].append(same)
         global_constrastive_info["diff"].append(diff)
+        global_constrastive_info["sim_mtx"].append(sim_mtx)
         print(f"Done! Avg. acc {acc:>.3f}, same {same:>.3f}, diff {diff:>.3f}")
         
     

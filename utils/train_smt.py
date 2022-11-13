@@ -41,6 +41,10 @@ def check_global_contrastive(model, dataset, device):
     model = model.to(device)
     dataloder = DataLoader(dataset, batch_size=8, shuffle=True, drop_last=False)
     
+    num_classes = len(np.unique(dataset.targets))
+    sim_mtx = torch.zeros([num_classes, num_classes])
+    frq_mtx = torch.zeros([num_classes, num_classes])
+    
     same_class_dis = []
     different_class_dis = []
     
@@ -50,14 +54,28 @@ def check_global_contrastive(model, dataset, device):
         rep = model.get_representation(X)
         for i in range(0, rep.shape[0] - 1, 2):
             similarity = rep[i] @ rep[i+1] / (torch.norm(rep[i]) * torch.norm(rep[i+1]))
-            if y[i].detach().item() == y[i+1].detach().item():
+            
+            label_i = y[i].detach().item()
+            label_j = y[i+1].detach().item()
+            
+            sim_mtx[label_i][label_j] += similarity.detach().item()
+            sim_mtx[label_j][label_i] += similarity.detach().item()
+            
+            frq_mtx[label_i][label_j] += 1
+            frq_mtx[label_j][label_i] += 1
+            
+            if label_i == label_j:
                 same_class_dis.append(similarity.detach().item())
             else:
                 different_class_dis.append(similarity.detach().item())
+
+    frq_mtx[frq_mtx == 0] = 1
+    sim_mtx = sim_mtx / frq_mtx
+    sim_mtx = sim_mtx.numpy()
     
     return np.mean(same_class_dis) if len(same_class_dis) else 0, \
             np.mean(different_class_dis) if len(different_class_dis) else 0, \
-                
+                sim_mtx
                 
 class NumpyEncoder(json.JSONEncoder):
     """ Special json encoder for numpy types """

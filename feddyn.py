@@ -51,7 +51,7 @@ if __name__ == "__main__":
     batch_size = args.batch_size
     epochs = args.epochs
     
-    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset = read_jsons(args.exp_folder, args.dataset)
+    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.exp_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
     local_acc_afag_record = {client_id:[] for client_id in client_id_list}
-    global_constrastive_info = {"same": [], "diff": []}
+    global_constrastive_info = {"same": [], "diff": [], "sim_mtx": []}
     
     global_cfmtx_record = []
     U_cfmtx_record = []
@@ -108,9 +108,10 @@ if __name__ == "__main__":
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
         
-        same, diff = check_global_contrastive(global_model, global_testing_dataset, device)
+        same, diff, sim_mtx = check_global_contrastive(global_model, global_testing_dataset, device)
         global_constrastive_info["same"].append(same)
         global_constrastive_info["diff"].append(diff)
+        global_constrastive_info["sim_mtx"].append(sim_mtx)
         print(f"Done! Avg. acc {acc:>.3f}, same {same:>.3f}, diff {diff:>.3f}")
 
         
