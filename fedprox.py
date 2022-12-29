@@ -99,7 +99,7 @@ if __name__ == "__main__":
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
         
-        same, diff, sim_mtx = check_global_contrastive(global_model, global_testing_dataset, device)
+        same, diff, sim_mtx = check_global_contrastive(global_model, singleset, device)
         global_constrastive_info["same"].append(same)
         global_constrastive_info["diff"].append(diff)
         global_constrastive_info["sim_mtx"].append(sim_mtx)
