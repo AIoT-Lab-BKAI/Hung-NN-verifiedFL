@@ -42,8 +42,8 @@ class NeuralNetwork(FModule):
 class MLP(FModule):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(784, 16384)
-        self.fc3 = nn.Linear(16384, 10)
+        self.fc1 = nn.Linear(784, 128)
+        self.fc3 = nn.Linear(128, 10)
 
     def forward(self, x):
         x = x.view(x.shape[0], -1)
