@@ -4,9 +4,17 @@ from utils.parser import read_arguments
 
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.base_model import NeuralNetwork
+from utils.base_model import NeuralNetwork, MLP
+# from utils.FIM import MLP
 from utils import fmodule
-import torch, json, os, numpy as np, copy
+import torch, json, os, numpy as np, copy, random
+
+def set_seed(seed):
+    random.seed(1+seed)
+    np.random.seed(21+seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    torch.manual_seed(12+seed)
+    torch.cuda.manual_seed_all(123+seed)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -44,10 +52,12 @@ if __name__ == "__main__":
     batch_size = args.batch_size
     epochs = args.epochs
     
+    set_seed(args.seed)
+    
     num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.exp_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     
-    global_model = NeuralNetwork().to(device)
+    global_model = MLP().to(device)
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
     local_acc_afag_record = {client_id:[] for client_id in client_id_list}
@@ -114,10 +124,11 @@ if __name__ == "__main__":
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
         
-        same, diff, sim_mtx = check_global_contrastive(global_model, singleset, device)
-        global_constrastive_info["same"].append(same)
-        global_constrastive_info["diff"].append(diff)
-        global_constrastive_info["sim_mtx"].append(sim_mtx)
+        # same, diff, sim_mtx = check_global_contrastive(global_model, singleset, device)
+        # global_constrastive_info["same"].append(same)
+        # global_constrastive_info["diff"].append(diff)
+        # global_constrastive_info["sim_mtx"].append(sim_mtx)
+        same, diff = 0, 0
         print(f"Done! Avg. acc {acc:>.3f}, same {same:>.3f}, diff {diff:>.3f}")
 
         

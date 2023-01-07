@@ -38,15 +38,3 @@ class NeuralNetwork(FModule):
     def get_representation(self, x):
         return self.encoder(x)
     
-    
-class MLP(FModule):
-    def __init__(self):
-        super().__init__()
-        self.fc1 = nn.Linear(784, 128)
-        self.fc3 = nn.Linear(128, 10)
-
-    def forward(self, x):
-        x = x.view(x.shape[0], -1)
-        x = F.relu(self.fc1(x))
-        x = self.fc3(x)
-        return x
