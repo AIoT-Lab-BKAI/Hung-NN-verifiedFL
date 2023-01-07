@@ -2,7 +2,7 @@ from utils.fmodule import FModule
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-from utils.FIM2 import inverse, step
+from utils.FIM2 import inverse, get_module_from_model
 from torch.utils.data import DataLoader
 
 
@@ -19,7 +19,7 @@ class MLP3(FModule):
         self.a1 = F.relu(self.s1)
         self.s2 = self.fc2(self.a1)
         self.a2 = F.relu(self.s2)
-        self.s3 = self.fc2(self.a2)
+        self.s3 = self.fc3(self.a2)
         self.FIM_params = [self.s1, self.s2, self.s3]
         return self.s3
     
@@ -32,13 +32,13 @@ def compute_grads(model:MLP3, X:torch.Tensor, Y:torch.Tensor, loss_fn=torch.nn.K
     g1, g2, g3, dw1, dw2, dw3 = grads
     a0, a1, a2 = model.a0, model.a1, model.a2
     
-    A0 = torch.mean(a0.unsqueeze(2).cpu() @ a0.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    A1 = torch.mean(a1.unsqueeze(2).cpu() @ a1.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    A2 = torch.mean(a2.unsqueeze(2).cpu() @ a2.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    A0 = torch.sum(a0.unsqueeze(2).cpu() @ a0.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    A1 = torch.sum(a1.unsqueeze(2).cpu() @ a1.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    A2 = torch.sum(a2.unsqueeze(2).cpu() @ a2.unsqueeze(2).cpu().transpose(1,2), dim=0)
     
-    G1 = torch.mean(g1.unsqueeze(2).cpu() @ g1.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    G2 = torch.mean(g2.unsqueeze(2).cpu() @ g2.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    G3 = torch.mean(g3.unsqueeze(2).cpu() @ g3.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    G1 = torch.sum(g1.unsqueeze(2).cpu() @ g1.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    G2 = torch.sum(g2.unsqueeze(2).cpu() @ g2.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    G3 = torch.sum(g3.unsqueeze(2).cpu() @ g3.unsqueeze(2).cpu().transpose(1,2), dim=0)
     
     return A0, A1, A2, G1, G2, G3, dw1.cpu(), dw2.cpu(), dw3.cpu()
 
@@ -55,10 +55,21 @@ def compute_natural_grads(grads):
     return natural_grads
 
 
+def step(centroid, nat_grads, lr = 1.0):
+    res = MLP3()
+    res_modules = get_module_from_model(res)
+    cen_modules = get_module_from_model(centroid)
+    with torch.no_grad():
+        for r_module, c_module, nat_grad in zip(res_modules, cen_modules, nat_grads):
+            r_module._parameters['weight'].copy_(c_module._parameters['weight'] - lr * nat_grad)
+    return res
+
+
 def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
     print("Perform one step natural gradient with Fisher Matrix... ", end="")
     # Each client compute grads using their own dataset but the centroid's model
     grad_list = []
+    total_data = 0
     for client_id in client_id_list:
         # Training process
         my_training_dataset = clients_training_dataset[client_id]
@@ -67,6 +78,7 @@ def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device
         X, y = next(iter(train_dataloader))
         X, y = X.to(device), y.to(device)
         grad_list.append(compute_grads(centroid, X, y))
+        total_data += len(my_training_dataset)
         
     # Server average the gradients
     vgrad = [None for i in range(len(grad_list[0]))]
@@ -75,7 +87,7 @@ def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device
         for i in range(len(grad)):
             vgrad[i] = grad[i] if vgrad[i] is None else vgrad[i] + grad[i]
     
-    vgrad = [vg/len(grad_list) for vg in vgrad]
+    vgrad = [vg/total_data for vg in vgrad]
     
     # Server compute natural gradients
     nat_grads = compute_natural_grads(vgrad)

@@ -1,6 +1,6 @@
 # CUDA_VISIBLE_DEVICES=1 python fedavg.py --seed 0 --epochs 4 --round 50 --batch_size 16 --dataset "cifar10" --exp_folder "../jsons/baseline/simple_9"
 # CUDA_VISIBLE_DEVICES=1 python scaffold.py --seed 0 --epochs 4 --round 50 --batch_size 16 --dataset "cifar10" --exp_folder "../jsons/baseline/simple_9" > scaffold.log &
-CUDA_VISIBLE_DEVICES=0 python fim3.py --seed 0 --epochs 200 --batch_size 16 --dataset "mnist" --exp_folder "./jsons/baseline/simple_9"
+CUDA_VISIBLE_DEVICES=0 python fim3.py --seed 0 --epochs 50 --batch_size 16 --dataset "mnist" --exp_folder "./jsons/baseline/simple_9"
 
 
 # CUDA_VISIBLE_DEVICES=0,1 python feddyn.py --epochs 8 --batch_size 4 --round 100

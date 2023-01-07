@@ -56,24 +56,6 @@ class MLP2(FModule):
         return self.s2
     
 
-class MLP3(FModule):
-    def __init__(self, bias=False):
-        super().__init__()
-        self.fc1 = nn.Linear(3 * 32 * 32, 2048, bias=bias)
-        self.fc2 = nn.Linear(2048, 2048, bias=bias)
-        self.fc3 = nn.Linear(2048, 10, bias=bias)
-
-    def forward(self, x):
-        self.a0 = x.view(x.shape[0], -1)
-        self.s1 = self.fc1(self.a0)
-        self.a1 = F.relu(self.s1)
-        self.s2 = self.fc2(self.a1)
-        self.a2 = F.relu(self.s2)
-        self.s3 = self.fc2(self.a2)
-        self.FIM_params = [self.s1, self.s2, self.s3]
-        return self.s3
-    
-
 def inverse(input: torch.Tensor):
     EYE = torch.eye(input.shape[0]).to(input.device)
     try:
@@ -97,10 +79,10 @@ def compute_grads(model:MLP2, X:torch.Tensor, Y:torch.Tensor, loss_fn=torch.nn.K
     g1, g2, dw1, dw2 = grads
     a0, a1 = model.a0, model.a1
     
-    A0 = torch.mean(a0.unsqueeze(2).cpu() @ a0.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    A1 = torch.mean(a1.unsqueeze(2).cpu() @ a1.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    G1 = torch.mean(g1.unsqueeze(2).cpu() @ g1.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    G2 = torch.mean(g2.unsqueeze(2).cpu() @ g2.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    A0 = torch.sum(a0.unsqueeze(2).cpu() @ a0.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    A1 = torch.sum(a1.unsqueeze(2).cpu() @ a1.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    G1 = torch.sum(g1.unsqueeze(2).cpu() @ g1.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    G2 = torch.sum(g2.unsqueeze(2).cpu() @ g2.unsqueeze(2).cpu().transpose(1,2), dim=0)
     
     return A0, A1, G1, G2, dw1.cpu(), dw2.cpu()
 
@@ -117,7 +99,7 @@ def compute_natural_grads(grads):
 
 
 def step(centroid, nat_grads, lr = 1.0):
-    res = copy.deepcopy(centroid)
+    res = MLP2()
     res_modules = get_module_from_model(res)
     cen_modules = get_module_from_model(centroid)
     with torch.no_grad():
@@ -130,6 +112,7 @@ def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device
     print("Perform one step natural gradient with Fisher Matrix... ", end="")
     # Each client compute grads using their own dataset but the centroid's model
     grad_list = []
+    total_data = 0
     for client_id in client_id_list:
         # Training process
         my_training_dataset = clients_training_dataset[client_id]
@@ -138,6 +121,7 @@ def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device
         X, y = next(iter(train_dataloader))
         X, y = X.to(device), y.to(device)
         grad_list.append(compute_grads(centroid, X, y))
+        total_data += len(my_training_dataset)
         
     # Server average the gradients
     vgrad = [None for i in range(len(grad_list[0]))]
@@ -146,7 +130,7 @@ def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device
         for i in range(len(grad)):
             vgrad[i] = grad[i] if vgrad[i] is None else vgrad[i] + grad[i]
     
-    vgrad = [vg/len(grad_list) for vg in vgrad]
+    vgrad = [vg/total_data for vg in vgrad]
     
     # Server compute natural gradients
     nat_grads = compute_natural_grads(vgrad)
