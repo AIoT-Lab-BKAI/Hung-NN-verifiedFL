@@ -2,13 +2,14 @@ from utils.fmodule import FModule
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-from FIM2 import get_module_from_model, flatten_model, inverse
+from utils.FIM2 import inverse, step
+from torch.utils.data import DataLoader
 
 
 class MLP3(FModule):
     def __init__(self, bias=False):
         super().__init__()
-        self.fc1 = nn.Linear(3 * 32 * 32, 4096, bias=bias)
+        self.fc1 = nn.Linear(28 * 28, 4096, bias=bias)
         self.fc2 = nn.Linear(4096, 4096, bias=bias)
         self.fc3 = nn.Linear(4096, 10, bias=bias)
 
@@ -52,3 +53,35 @@ def compute_natural_grads(grads):
     ]
     
     return natural_grads
+
+
+def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
+    print("Perform one step natural gradient with Fisher Matrix... ", end="")
+    # Each client compute grads using their own dataset but the centroid's model
+    grad_list = []
+    for client_id in client_id_list:
+        # Training process
+        my_training_dataset = clients_training_dataset[client_id]
+        train_dataloader = DataLoader(my_training_dataset, batch_size=len(my_training_dataset), shuffle=True, drop_last=False)
+        
+        X, y = next(iter(train_dataloader))
+        X, y = X.to(device), y.to(device)
+        grad_list.append(compute_grads(centroid, X, y))
+        
+    # Server average the gradients
+    vgrad = [None for i in range(len(grad_list[0]))]
+    for grad in grad_list:
+        # Example: grad = (A0, A1, G1, G2, dw1, dw2)
+        for i in range(len(grad)):
+            vgrad[i] = grad[i] if vgrad[i] is None else vgrad[i] + grad[i]
+    
+    vgrad = [vg/len(grad_list) for vg in vgrad]
+    
+    # Server compute natural gradients
+    nat_grads = compute_natural_grads(vgrad)
+    
+    # Server update the model
+    global_model = step(centroid.cpu(), nat_grads, lr=eta)
+    print("Done!")   
+    return global_model
+
