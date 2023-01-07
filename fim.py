@@ -5,7 +5,8 @@ from utils.parser import read_arguments
 from utils import fmodule
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.FIM2 import MLP2, FIM_step
+from utils.FIM2 import MLP2, FIM2_step
+from utils.FIM3 import MLP3, FIM3_step
 import torch, json, os, numpy as np, copy, random
 import torch.nn.functional as F
 
@@ -46,7 +47,14 @@ if __name__ == "__main__":
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
-    global_model = MLP2().to(device)
+    if args.dataset == "mnist":
+        global_model = MLP2().to(device)
+        fim_step = FIM2_step
+    elif args.dataset == "cifar10":
+        global_model = MLP3().to(device)
+        fim_step = FIM3_step
+    else:
+        raise NotImplementedError
     
     print("============ Start ==============")
     client_models = []
@@ -78,8 +86,7 @@ if __name__ == "__main__":
         print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, test acc {test_acc:>.3f}, train acc {train_acc:>.3f}, shift length {norm_diff:>.5f}")
 
     centroid = fmodule._model_sum([model * pk for model, pk in zip(client_models, impact_factors)])
-    
-    global_model = FIM_step(centroid, clients_training_dataset, client_id_list, eta=1).to(device)
+    global_model = fim_step(centroid, clients_training_dataset, client_id_list, eta=1).to(device)
     
     # Testing
     print("Server testing... ", end="")

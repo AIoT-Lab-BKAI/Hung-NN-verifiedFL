@@ -51,8 +51,8 @@ def read_jsons(folder_path, dataset="mnist"):
     else:
         raise Exception("Not support", dataset, "yet")
     
-    training_jsons = json.load(open(f"{folder_path}/clients_training_data.json", 'r'))
-    testing_jsons = json.load(open(f"{folder_path}/clients_testing_data.json", 'r'))
+    training_jsons = json.load(open(f"{folder_path}/train.json", 'r'))
+    testing_jsons = json.load(open(f"{folder_path}/test.json", 'r'))
     
     training_set = []
     testing_set = []

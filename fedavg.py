@@ -5,6 +5,7 @@ from utils.parser import read_arguments
 from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.FIM2 import MLP2
+from utils.FIM3 import MLP3
 from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 import torch.nn.functional as F
@@ -22,10 +23,6 @@ def train(dataloader, model, loss_fn, optimizer):
         # Compute prediction error
         pred = model(X)
         loss = loss_fn(pred, y)
-        # KL
-        # pred = F.softmax(pred, dim=1) 
-        # ground = F.softmax(F.one_hot(y, 10) * 1.0, dim=1) 
-        # loss = torch.sum(ground * torch.log(ground/pred)) / (ground.shape[0] * ground.shape[1])
         
         # Backpropagation
         optimizer.zero_grad()
@@ -46,11 +43,16 @@ if __name__ == "__main__":
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
-    global_model = MLP2().to(device)
+    if args.dataset == "mnist":
+        global_model = MLP2().to(device)
+    elif args.dataset == "cifar10":
+        global_model = MLP3().to(device)
+    else:
+        raise NotImplementedError
+        
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
     local_acc_afag_record = {client_id:[] for client_id in client_id_list}
-    global_constrastive_info = {"same": [], "diff": [], "sim_mtx": []}
     
     global_cfmtx_record = []
     U_cfmtx_record = []
@@ -97,13 +99,8 @@ if __name__ == "__main__":
         print("    # Server testing... ", end="")
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
-        
-        # same, diff, sim_mtx = check_global_contrastive(global_model, singleset, device)
-        # global_constrastive_info["same"].append(same)
-        # global_constrastive_info["diff"].append(diff)
-        # global_constrastive_info["sim_mtx"].append(sim_mtx)
-        same, diff = 0, 0
-        print(f"Done! Avg. acc {acc:>.3f}, same {same:>.3f}, diff {diff:>.3f}")
+    
+        print(f"Done! Avg. acc {acc:>.3f}")
         # print_cfmtx(cfmtx)
         
     if not Path(f"records/{args.exp_folder}/fedavg").exists():
@@ -113,5 +110,4 @@ if __name__ == "__main__":
     json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/fedavg/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
     json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/fedavg/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
     json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fedavg/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
-    json.dump(global_constrastive_info, open(f"records/{args.exp_folder}/fedavg/global_constrastive_info.json", "w"),  cls=NumpyEncoder)
     

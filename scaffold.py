@@ -4,8 +4,8 @@ from utils.parser import read_arguments
 
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.base_model import NeuralNetwork, MLP
-# from utils.FIM import MLP
+from utils.FIM2 import MLP2
+from utils.FIM3 import MLP3
 from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 
@@ -49,11 +49,16 @@ if __name__ == "__main__":
     num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.exp_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     
-    global_model = MLP().to(device)
+    if args.dataset == "mnist":
+        global_model = MLP2().to(device)
+    elif args.dataset == "cifar10":
+        global_model = MLP3().to(device)
+    else:
+        raise NotImplementedError
+    
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
     local_acc_afag_record = {client_id:[] for client_id in client_id_list}
-    global_constrastive_info = {"same": [], "diff": [], "sim_mtx": []}
     
     global_cfmtx_record = []
     U_cfmtx_record = []
@@ -116,12 +121,7 @@ if __name__ == "__main__":
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
         
-        # same, diff, sim_mtx = check_global_contrastive(global_model, singleset, device)
-        # global_constrastive_info["same"].append(same)
-        # global_constrastive_info["diff"].append(diff)
-        # global_constrastive_info["sim_mtx"].append(sim_mtx)
-        same, diff = 0, 0
-        print(f"Done! Avg. acc {acc:>.3f}, same {same:>.3f}, diff {diff:>.3f}")
+        print(f"Done! Avg. acc {acc:>.3f}")
 
         
     if not Path(f"records/{args.exp_folder}/scaffold").exists():
@@ -131,5 +131,4 @@ if __name__ == "__main__":
     json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
     json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
     json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
-    json.dump(global_constrastive_info, open(f"records/{args.exp_folder}/scaffold/global_constrastive_info.json", "w"),  cls=NumpyEncoder)
     

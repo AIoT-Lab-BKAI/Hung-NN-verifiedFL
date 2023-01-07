@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 class MLP3(FModule):
     def __init__(self, bias=False):
         super().__init__()
-        self.fc1 = nn.Linear(28 * 28, 4096, bias=bias)
+        self.fc1 = nn.Linear(3 * 32 * 32, 4096, bias=bias)
         self.fc2 = nn.Linear(4096, 4096, bias=bias)
         self.fc3 = nn.Linear(4096, 10, bias=bias)
 
@@ -65,7 +65,7 @@ def step(centroid, nat_grads, lr = 1.0):
     return res
 
 
-def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
+def FIM3_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
     print("Perform one step natural gradient with Fisher Matrix... ", end="")
     # Each client compute grads using their own dataset but the centroid's model
     grad_list = []

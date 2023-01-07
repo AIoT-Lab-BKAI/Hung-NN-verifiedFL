@@ -108,7 +108,7 @@ def step(centroid, nat_grads, lr = 1.0):
     return res
 
 
-def FIM_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
+def FIM2_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
     print("Perform one step natural gradient with Fisher Matrix... ", end="")
     # Each client compute grads using their own dataset but the centroid's model
     grad_list = []
