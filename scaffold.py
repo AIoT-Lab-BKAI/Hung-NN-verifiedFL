@@ -69,13 +69,16 @@ if __name__ == "__main__":
     
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
-        client_models = []
         
         client_dys = []
         client_dcs = []
+        
+        client_id_list_this_round = np.random.choice(client_id_list, size=10, replace=False).tolist()
+        total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
+        impact_factors = [len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round]
     
         # Local training
-        for client_id in client_id_list:
+        for client_id in client_id_list_this_round:
             print("    Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
@@ -105,7 +108,6 @@ if __name__ == "__main__":
                 client_dcs.append(dc)
     
             local_loss_record[client_id].append(np.mean(epoch_loss))
-            client_models.append(local_model)
             
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)

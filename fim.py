@@ -94,4 +94,6 @@ if __name__ == "__main__":
     print(f"Done! Avg. acc {acc:>.3f}")
 
     # print_cfmtx(cfmtx)
-    
+    print("Centroid testing... ", end="")
+    acc, cfmtx = test(centroid, global_testing_dataset, device)
+    print(f"Done! Avg. acc {acc:>.3f}")

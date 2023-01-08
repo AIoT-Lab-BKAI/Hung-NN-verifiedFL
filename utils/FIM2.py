@@ -44,8 +44,8 @@ def flatten_model(model):
 class MLP2(FModule):
     def __init__(self, bias=False):
         super().__init__()
-        self.fc1 = nn.Linear(3 * 32 * 32, 2048, bias=bias)
-        self.fc2 = nn.Linear(2048, 10, bias=bias)
+        self.fc1 = nn.Linear(28 * 28, 4096, bias=bias)
+        self.fc2 = nn.Linear(4096, 10, bias=bias)
 
     def forward(self, x):
         self.a0 = x.view(x.shape[0], -1)
@@ -109,7 +109,7 @@ def step(centroid, nat_grads, lr = 1.0):
 
 
 def FIM2_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
-    print("Perform one step natural gradient with Fisher Matrix... ", end="")
+    print("FIM2: Perform one step natural gradient with Fisher Matrix... ", end="")
     # Each client compute grads using their own dataset but the centroid's model
     grad_list = []
     total_data = 0
@@ -131,6 +131,7 @@ def FIM2_step(centroid, clients_training_dataset, client_id_list, eta=0.1, devic
             vgrad[i] = grad[i] if vgrad[i] is None else vgrad[i] + grad[i]
     
     vgrad = [vg/total_data for vg in vgrad]
+    # vgrad = [vg/len(grad_list) for vg in vgrad]
     
     # Server compute natural gradients
     nat_grads = compute_natural_grads(vgrad)
