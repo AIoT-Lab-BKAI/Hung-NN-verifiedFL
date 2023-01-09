@@ -32,11 +32,11 @@ def train(train_dataloader, local_model, loss_fn, optimizer, cg, c):
     return losses, num_batches
 
 
-def aggregate(global_model, cg, dys, dcs, eta=1.0, total_client=5):  # c_list is c_i^+
-    dw = fmodule._model_average(dys)
-    dc = fmodule._model_average(dcs)
-    new_model = global_model + eta * dw
-    new_c = cg + 1.0 * len(dcs) / total_client * dc
+def aggregate(global_model, cg, aver_dys, aver_dcs, eta=1.0, rate=1.0):
+    # dw = fmodule._model_average(dys)
+    # dc = fmodule._model_average(dcs)
+    new_model = global_model + eta * aver_dys
+    new_c = cg + 1.0 * rate * aver_dcs
     return new_model, new_c
 
 
@@ -67,15 +67,18 @@ if __name__ == "__main__":
     cg = global_model.zeros_like()
     cg.freeze_grad()
     
+    client_per_round = len(client_id_list)
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         
-        client_dys = []
-        client_dcs = []
+        # client_dys = []
+        aver_dys = global_model.zeros_like()
+        # client_dcs = []
+        aver_dcs = global_model.zeros_like()
         
-        client_id_list_this_round = np.random.choice(client_id_list, size=len(client_id_list), replace=False).tolist()
+        client_id_list_this_round = np.random.choice(client_id_list, size=client_per_round, replace=False).tolist()
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
-        impact_factors = [len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round]
+        impact_factors = [1/client_per_round for client_id in client_id_list_this_round]
     
         # Local training
         for client_id in sorted(client_id_list_this_round):
@@ -104,8 +107,11 @@ if __name__ == "__main__":
                 dy = local_model - global_model
                 dc = -1.0 / (K * 1e-3) * dy - cg
                 client_cs[client_id] = client_cs[client_id] + dc
-                client_dys.append(dy)
-                client_dcs.append(dc)
+                # client_dys.append(dy)
+                aver_dys = fmodule._model_sum([aver_dys, impact_factors[client_id] * dy])
+                # client_dcs.append(dc)
+                aver_dcs = fmodule._model_sum([aver_dcs, impact_factors[client_id] * dc])
+                
     
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
@@ -116,7 +122,7 @@ if __name__ == "__main__":
         
         print("    # Server aggregating... ", end="")
         # Server aggregation
-        global_model, cg = aggregate(global_model, cg, client_dys, client_dcs, total_client=len(client_id_list))
+        global_model, cg = aggregate(global_model, cg, aver_dys, aver_dcs, rate=client_per_round/len(client_id_list))
         print("Done!")
         
         print("    # Server testing... ", end="")

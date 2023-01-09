@@ -79,7 +79,6 @@ if __name__ == "__main__":
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         client_id_list_this_round = np.random.choice(client_id_list, size=client_per_round, replace=False).tolist()
-        total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
         impact_factors = [1.0/client_per_round for client_id in client_id_list_this_round]
         
         aver_model = global_model.zeros_like()

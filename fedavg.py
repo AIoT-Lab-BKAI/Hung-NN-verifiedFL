@@ -57,10 +57,10 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     
+    client_per_round = len(client_id_list)
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
-        # client_models_this_round = []
-        client_id_list_this_round = np.random.choice(client_id_list, size=len(client_id_list), replace=False).tolist()
+        client_id_list_this_round = np.random.choice(client_id_list, size=client_per_round, replace=False).tolist()
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
         impact_factors = [len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round]
         
