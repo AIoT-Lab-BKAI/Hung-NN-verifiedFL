@@ -1,20 +1,20 @@
-from utils.train_smt import test, print_cfmtx, NumpyEncoder, check_global_contrastive
+from utils.train_smt import test, NumpyEncoder
 from utils.reader import read_jsons
 from utils.parser import read_arguments
 
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.FIM2 import MLP2
-from utils.FIM3 import MLP3
+from utils.FIM2 import MLPv2
+from utils.FIM3 import MLPv3
 from utils import fmodule
-import torch, json, os, numpy as np, copy
+import torch, json, os, numpy as np, copy, random
+import torch.nn.functional as F
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def train(dataloader, model, src_model, loss_fn, optimizer, gradL, alpha=0.5):      
-    model = model.to(device)
+def train(dataloader, model, loss_fn, optimizer):   
+    model = model.cuda()
     model.train()
-         
     losses = []
         
     for batch, (X, y) in enumerate(dataloader):
@@ -22,30 +22,17 @@ def train(dataloader, model, src_model, loss_fn, optimizer, gradL, alpha=0.5):
 
         # Compute prediction error
         pred = model(X)
-        l1 = loss_fn(pred, y)
-        l2 = 0
-        l3 = 0
-        for pgl, pm, ps in zip(gradL.parameters(), model.parameters(), src_model.parameters()):
-            l2 += torch.dot(pgl.view(-1), pm.view(-1))
-            l3 += torch.sum(torch.pow(pm-ps,2))
-        loss = l1 - l2 + 0.5 * alpha * l3
+        loss = loss_fn(pred, y)
+        
         # Backpropagation
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
         losses.append(loss.item())
-    
-    # gradL = gradL - alpha * (model - src_model)
-    for p,q,k in zip(gradL.parameters(), model.parameters(), src_model.parameters()):
-        p = p - alpha * (q - k)
         
     return losses
 
-def aggregate(current_model, aver_model, h, rate, alpha=0.5):
-    h = h - alpha * (rate * aver_model - current_model)
-    new_model = aver_model - 1.0 / alpha * h
-    return new_model
 
 if __name__ == "__main__":
     args = read_arguments()
@@ -58,12 +45,12 @@ if __name__ == "__main__":
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
     if args.dataset == "mnist":
-        global_model = MLP2().to(device)
+        global_model = MLPv2().to(device)
     elif args.dataset == "cifar10":
-        global_model = MLP3().to(device)
+        global_model = MLPv3().to(device)
     else:
         raise NotImplementedError
-    
+        
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
     local_acc_afag_record = {client_id:[] for client_id in client_id_list}
@@ -71,30 +58,29 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     
-    server_h = global_model.zeros_like()
-    clients_gradLs = {client_id: global_model.zeros_like() for client_id in client_id_list}
+    client_taus = [epochs * np.ceil(len(clients_training_dataset[client_id])/batch_size) for client_id in client_id_list]
     
     client_per_round = len(client_id_list)
-    
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         client_id_list_this_round = sorted(np.random.choice(client_id_list, size=client_per_round, replace=False).tolist())
-        impact_factors = {client_id: 1.0/client_per_round for client_id in client_id_list_this_round}
+        total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
         
-        aver_model = global_model.zeros_like()
-        src_model = copy.deepcopy(global_model)
-        src_model.freeze_grad()
+        client_taus = {client_id: epochs * np.ceil(len(clients_training_dataset[client_id])/batch_size) for client_id in client_id_list}
+        impact_factors = {client_id: len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round}
         
+        delta = global_model.zeros_like()
+        tau_eff = 0
         # Local training
-        for client_id in client_id_list_this_round:
-            print("Client {} training... ".format(client_id), end="")
+        for client_id in sorted(client_id_list_this_round):
+            print("    Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
             
             local_model = copy.deepcopy(global_model)
             # Testing the global_model to the local data
-            acc, cfmtx = test(global_model, my_testing_dataset)
+            acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_afag_record[client_id].append(acc)
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
@@ -103,31 +89,36 @@ if __name__ == "__main__":
             
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, src_model, loss_fn, optimizer, gradL=clients_gradLs[client_id])))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
-                        
+            
+            # client_models_this_round.append(local_model)
+            
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_bfag_record[client_id].append(acc)
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
-            aver_model = fmodule._model_sum([aver_model, impact_factors[client_id] * local_model])
             
-        print("# Server aggregating... ", end="")
+            delta = fmodule._model_sum([delta, impact_factors[client_id]/client_taus[client_id] * (local_model - global_model)])
+            tau_eff += impact_factors[client_id] * client_taus[client_id]
+            
+        print("    # Server aggregating... ", end="")
         # Aggregation
-        global_model = aggregate(global_model, aver_model, server_h, rate=client_per_round/len(client_id_list))
+        global_model = global_model + tau_eff * delta
         print("Done!")
         
-        print("# Server testing... ", end="")
+        print("    # Server testing... ", end="")
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
-        print(f"Done! Avg. acc {acc:>.3f}")
-
-        
-    if not Path(f"records/{args.exp_folder}/feddyn").exists():
-        os.makedirs(f"records/{args.exp_folder}/feddyn")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/feddyn/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/feddyn/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/feddyn/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/feddyn/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+        print(f"Done! Avg. acc {acc:>.3f}")
+        # print_cfmtx(cfmtx)
+        
+    if not Path(f"records/{args.exp_folder}/fednova").exists():
+        os.makedirs(f"records/{args.exp_folder}/fednova")
+    
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/fednova/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/fednova/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/fednova/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fednova/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     

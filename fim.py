@@ -58,7 +58,7 @@ if __name__ == "__main__":
     
     print("============ Start ==============")
     # client_models = []
-    impact_factors = [len(clients_training_dataset[client_id])/total_sample for client_id in client_id_list]
+    impact_factors = {client_id: len(clients_training_dataset[client_id])/total_sample for client_id in client_id_list}
     
     centroid = global_model.zeros_like()
     

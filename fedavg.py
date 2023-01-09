@@ -60,13 +60,13 @@ if __name__ == "__main__":
     client_per_round = len(client_id_list)
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
-        client_id_list_this_round = np.random.choice(client_id_list, size=client_per_round, replace=False).tolist()
+        client_id_list_this_round = sorted(np.random.choice(client_id_list, size=client_per_round, replace=False).tolist())
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
-        impact_factors = [len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round]
+        impact_factors = {client_id: len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round}
         
         aver_model = global_model.zeros_like()
         # Local training
-        for client_id in sorted(client_id_list_this_round):
+        for client_id in client_id_list_this_round:
             print("    Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]

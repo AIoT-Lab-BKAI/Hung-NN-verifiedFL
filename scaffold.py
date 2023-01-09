@@ -63,7 +63,7 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     
-    client_cs = [global_model.zeros_like() for i in client_id_list]
+    client_cs = {client_id: global_model.zeros_like() for client_id in client_id_list}
     cg = global_model.zeros_like()
     cg.freeze_grad()
     
@@ -71,17 +71,15 @@ if __name__ == "__main__":
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         
-        # client_dys = []
         aver_dys = global_model.zeros_like()
-        # client_dcs = []
         aver_dcs = global_model.zeros_like()
         
-        client_id_list_this_round = np.random.choice(client_id_list, size=client_per_round, replace=False).tolist()
+        client_id_list_this_round = sorted(np.random.choice(client_id_list, size=client_per_round, replace=False).tolist())
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
-        impact_factors = [1/client_per_round for client_id in client_id_list_this_round]
+        impact_factors = {client_id: 1/client_per_round for client_id in client_id_list_this_round}
     
         # Local training
-        for client_id in sorted(client_id_list_this_round):
+        for client_id in client_id_list_this_round:
             print("    Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
@@ -107,11 +105,8 @@ if __name__ == "__main__":
                 dy = local_model - global_model
                 dc = -1.0 / (K * 1e-3) * dy - cg
                 client_cs[client_id] = client_cs[client_id] + dc
-                # client_dys.append(dy)
                 aver_dys = fmodule._model_sum([aver_dys, impact_factors[client_id] * dy])
-                # client_dcs.append(dc)
                 aver_dcs = fmodule._model_sum([aver_dcs, impact_factors[client_id] * dc])
-                
     
             local_loss_record[client_id].append(np.mean(epoch_loss))
             
@@ -120,15 +115,14 @@ if __name__ == "__main__":
             local_acc_bfag_record[client_id].append(acc)
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
         
-        print("    # Server aggregating... ", end="")
+        print("# Server aggregating... ", end="")
         # Server aggregation
         global_model, cg = aggregate(global_model, cg, aver_dys, aver_dcs, rate=client_per_round/len(client_id_list))
         print("Done!")
         
-        print("    # Server testing... ", end="")
+        print("# Server testing... ", end="")
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
-        
         print(f"Done! Avg. acc {acc:>.3f}")
 
         
