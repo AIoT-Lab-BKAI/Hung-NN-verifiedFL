@@ -2,10 +2,24 @@ from utils.fmodule import FModule
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import numpy as np
 from utils.FIM2 import inverse, get_module_from_model
 from torch.utils.data import DataLoader
 
+
 hidden = 4096  
+
+total_A0 = None
+total_A1 = None
+total_A2 = None
+
+total_G1 = None
+total_G2 = None
+total_G3 = None
+
+total_dw1 = None
+total_dw2 = None
+total_dw3 = None
 
 class MLPv3(FModule):
     def __init__(self, bias=False):
@@ -37,31 +51,45 @@ class MLP3(MLPv3):
         
 
 def compute_grads(model:MLP3, X:torch.Tensor, Y:torch.Tensor, loss_fn=torch.nn.KLDivLoss(reduction='batchmean')):
+    global total_A0, total_A1, total_A2, total_G1, total_G2, total_G3, total_dw1, total_dw2, total_dw3
+    
     pred = model(X)
-    loss = loss_fn(F.softmax(pred, dim=1), F.softmax(F.one_hot(Y, 10) * 1.0, dim=1))
+    loss = loss_fn(F.log_softmax(pred, dim=1), F.softmax(F.one_hot(Y, 10) * 1.0, dim=1))
     
     grads = torch.autograd.grad(loss, [*model.FIM_params, *model.parameters()], create_graph=False, retain_graph=False)
     g1, g2, g3, dw1, dw2, dw3 = grads
     a0, a1, a2 = model.a0, model.a1, model.a2
     
-    A0 = torch.sum(a0.unsqueeze(2).cpu() @ a0.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    A1 = torch.sum(a1.unsqueeze(2).cpu() @ a1.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    A2 = torch.sum(a2.unsqueeze(2).cpu() @ a2.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    A0 = torch.sum(a0.unsqueeze(2) @ a0.unsqueeze(2).transpose(1,2), dim=0)
+    total_A0 = A0 if total_A0 is None else total_A0 + A0
     
-    G1 = torch.sum(g1.unsqueeze(2).cpu() @ g1.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    G2 = torch.sum(g2.unsqueeze(2).cpu() @ g2.unsqueeze(2).cpu().transpose(1,2), dim=0)
-    G3 = torch.sum(g3.unsqueeze(2).cpu() @ g3.unsqueeze(2).cpu().transpose(1,2), dim=0)
+    A1 = torch.sum(a1.unsqueeze(2) @ a1.unsqueeze(2).transpose(1,2), dim=0)
+    total_A1 = A1 if total_A1 is None else total_A1 + A1
     
-    return A0, A1, A2, G1, G2, G3, dw1.cpu(), dw2.cpu(), dw3.cpu()
+    A2 = torch.sum(a2.unsqueeze(2) @ a2.unsqueeze(2).transpose(1,2), dim=0)
+    total_A2 = A2 if total_A2 is None else total_A2 + A2
+    
+    G1 = torch.sum(g1.unsqueeze(2) @ g1.unsqueeze(2).transpose(1,2), dim=0)
+    total_G1 = G1 if total_G1 is None else total_G1 + G1
+    
+    G2 = torch.sum(g2.unsqueeze(2) @ g2.unsqueeze(2).transpose(1,2), dim=0)
+    total_G2 = G2 if total_G2 is None else total_G2 + G2
+    
+    G3 = torch.sum(g3.unsqueeze(2) @ g3.unsqueeze(2).transpose(1,2), dim=0)
+    total_G3 = G3 if total_G3 is None else total_G3 + G3
+    
+    total_dw1 = dw1 if total_dw1 is None else total_dw1 + dw1
+    total_dw2 = dw2 if total_dw2 is None else total_dw2 + dw2
+    total_dw3 = dw3 if total_dw3 is None else total_dw3 + dw3
+    
 
-
-def compute_natural_grads(grads):
-    A0, A1, A2, G1, G2, G3, dw1, dw2, dw3 = grads
+def compute_natural_grads(total_data:int):
+    global total_A0, total_A1, total_A2, total_G1, total_G2, total_G3, total_dw1, total_dw2, total_dw3
     
     natural_grads = [
-        inverse(G1) @ dw1 @ inverse(A0),
-        inverse(G2) @ dw2 @ inverse(A1),
-        inverse(G3) @ dw3 @ inverse(A2),
+        inverse(total_G1/total_data) @ (total_dw1/total_data) @ inverse(total_A0/total_data),
+        inverse(total_G2/total_data) @ (total_dw2/total_data) @ inverse(total_A1/total_data),
+        inverse(total_G3/total_data) @ (total_dw3/total_data) @ inverse(total_A2/total_data),
     ]
     
     return natural_grads
@@ -78,9 +106,8 @@ def step(centroid, nat_grads, lr = 1.0):
 
 
 def FIM3_step(centroid, clients_training_dataset, client_id_list, eta=0.1, device='cuda'):
-    print("Perform one step natural gradient with Fisher Matrix... ", end="")
+    print("FIM3: Perform one step natural gradient with Fisher Matrix... ", end="")
     # Each client compute grads using their own dataset but the centroid's model
-    grad_list = []
     total_data = 0
     for client_id in client_id_list:
         # Training process
@@ -89,23 +116,14 @@ def FIM3_step(centroid, clients_training_dataset, client_id_list, eta=0.1, devic
         
         X, y = next(iter(train_dataloader))
         X, y = X.to(device), y.to(device)
-        grad_list.append(compute_grads(centroid, X, y))
+        compute_grads(centroid, X, y)
         total_data += len(my_training_dataset)
-        
-    # Server average the gradients
-    vgrad = [None for i in range(len(grad_list[0]))]
-    for grad in grad_list:
-        # Example: grad = (A0, A1, G1, G2, dw1, dw2)
-        for i in range(len(grad)):
-            vgrad[i] = grad[i] if vgrad[i] is None else vgrad[i] + grad[i]
-    
-    vgrad = [vg/total_data for vg in vgrad]
     
     # Server compute natural gradients
-    nat_grads = compute_natural_grads(vgrad)
+    nat_grads = compute_natural_grads(total_data)
     
     # Server update the model
-    global_model = step(centroid.cpu(), nat_grads, lr=eta)
+    global_model = step(centroid, nat_grads, lr=eta)
     print("Done!")   
     return global_model
 

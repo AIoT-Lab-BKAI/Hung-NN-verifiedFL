@@ -24,8 +24,7 @@ def train(dataloader, model, optimizer):
 
         # Compute prediction error
         pred = F.log_softmax(model(X), dim=1) 
-        ground = F.log_softmax(F.one_hot(y, 10) * 1.0, dim=1)
-        # loss = torch.sum(ground * torch.log(1/pred)) / (ground.shape[0] * ground.shape[1])
+        ground = F.softmax(F.one_hot(y, 10) * 1.0, dim=1)
         loss = loss_fn(pred, ground)
         
         # Backpropagation
@@ -58,8 +57,10 @@ if __name__ == "__main__":
         raise NotImplementedError
     
     print("============ Start ==============")
-    client_models = []
+    # client_models = []
     impact_factors = [len(clients_training_dataset[client_id])/total_sample for client_id in client_id_list]
+    
+    centroid = global_model.zeros_like()
     
     # Local training
     for client_id in client_id_list:
@@ -77,7 +78,7 @@ if __name__ == "__main__":
         for t in range(epochs):
             epoch_loss.append(np.mean(train(train_dataloader, local_model, optimizer)))
         
-        client_models.append(local_model)
+        # client_models.append(local_model)
         
         # Testing the local_model
         test_acc, _ = test(local_model, my_testing_dataset)
@@ -85,8 +86,8 @@ if __name__ == "__main__":
         
         norm_diff = (local_model - global_model).norm()
         print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, test acc {test_acc:>.3f}, train acc {train_acc:>.3f}, shift length {norm_diff:>.5f}")
-
-    centroid = fmodule._model_sum([model * pk for model, pk in zip(client_models, impact_factors)])
+        centroid = fmodule._model_sum([centroid, impact_factors[client_id] * local_model])
+        
     global_model = fim_step(centroid, clients_training_dataset, client_id_list, eta=1, device=device)
     
     # Testing

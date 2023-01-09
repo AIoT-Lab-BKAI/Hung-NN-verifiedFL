@@ -42,7 +42,17 @@ def flatten_model(model):
 
 
 hidden = 4096 
-    
+
+total_A0 = None
+total_A1 = None
+
+total_G1 = None
+total_G2 = None
+
+total_dw1 = None
+total_dw2 = None
+
+
 class MLPv2(FModule):
     def __init__(self, bias=False):
         super().__init__()
@@ -84,6 +94,8 @@ def inverse(input: torch.Tensor):
 
 
 def compute_grads(model:MLP2, X:torch.Tensor, Y:torch.Tensor, loss_fn=torch.nn.KLDivLoss(reduction='batchmean'), device='cuda'):
+    global total_A0, total_A1, total_G1, total_G2, total_dw1, total_dw2
+    
     X, Y = X.to(device), Y.to(device)
     
     pred = model(X)
@@ -93,20 +105,29 @@ def compute_grads(model:MLP2, X:torch.Tensor, Y:torch.Tensor, loss_fn=torch.nn.K
     g1, g2, dw1, dw2 = grads
     a0, a1 = model.a0, model.a1
     
-    A0 = torch.mean(a0.unsqueeze(2) @ a0.unsqueeze(2).transpose(1,2), dim=0)
-    A1 = torch.mean(a1.unsqueeze(2) @ a1.unsqueeze(2).transpose(1,2), dim=0)
-    G1 = torch.mean(g1.unsqueeze(2) @ g1.unsqueeze(2).transpose(1,2), dim=0)
-    G2 = torch.mean(g2.unsqueeze(2) @ g2.unsqueeze(2).transpose(1,2), dim=0)
+    A0 = torch.sum(a0.unsqueeze(2) @ a0.unsqueeze(2).transpose(1,2), dim=0)
+    total_A0 = A0 if total_A0 is None else total_A0 + A0
     
-    return A0, A1, G1, G2, dw1, dw2
+    A1 = torch.sum(a1.unsqueeze(2) @ a1.unsqueeze(2).transpose(1,2), dim=0)
+    total_A1 = A1 if total_A1 is None else total_A1 + A1
+    
+    G1 = torch.sum(g1.unsqueeze(2) @ g1.unsqueeze(2).transpose(1,2), dim=0)
+    total_G1 = G1 if total_G1 is None else total_G1 + G1
+    
+    G2 = torch.sum(g2.unsqueeze(2) @ g2.unsqueeze(2).transpose(1,2), dim=0)
+    total_G2 = G2 if total_G2 is None else total_G2 + G2
+    
+    total_dw1 = dw1 if total_dw1 is None else total_dw1 + dw1
+    total_dw2 = dw2 if total_dw2 is None else total_dw2 + dw2
+    
+    
 
-
-def compute_natural_grads(grads):
-    A0, A1, G1, G2, dw1, dw2 = grads
+def compute_natural_grads(total_data:int):
+    global total_A0, total_A1, total_G1, total_G2, total_dw1, total_dw2
     
     natural_grads = [
-        inverse(G1) @ dw1 @ inverse(A0),
-        inverse(G2) @ dw2 @ inverse(A1),
+        inverse(total_G1/total_data) @ (total_dw1/total_data) @ inverse(total_A0/total_data),
+        inverse(total_G2/total_data) @ (total_dw2/total_data) @ inverse(total_A1/total_data),
     ]
     
     return natural_grads
@@ -125,31 +146,21 @@ def step(centroid, nat_grads, lr = 1.0, device='cuda'):
 def FIM2_step(centroid, clients_training_dataset, client_id_list, eta=1.0, device='cuda'):
     print("FIM2: Perform one step natural gradient with Fisher Matrix... ", end="")
     # Each client compute grads using their own dataset but the centroid's model
-    grad_list = []
-    # total_data = 0
+    total_data = 0
     for client_id in client_id_list:
         # Training process
         my_training_dataset = clients_training_dataset[client_id]
         train_dataloader = DataLoader(my_training_dataset, batch_size=len(my_training_dataset), shuffle=True, drop_last=False)
         
         X, y = next(iter(train_dataloader))
-        grad_list.append(compute_grads(centroid, X, y, device=device))
-        # total_data += len(my_training_dataset)
-        
-    # Server average the gradients
-    vgrad = [None for i in range(len(grad_list[0]))]
-    for grad in grad_list:
-        # Example: grad = (A0, A1, G1, G2, dw1, dw2)
-        for i in range(len(grad)):
-            vgrad[i] = grad[i] if vgrad[i] is None else vgrad[i] + grad[i]
-    
-    # vgrad = [vg/total_data for vg in vgrad]
-    vgrad = [vg/len(grad_list) for vg in vgrad]
+        X, y = X.to(device), y.to(device)
+        compute_grads(centroid, X, y)
+        total_data += len(my_training_dataset)
     
     # Server compute natural gradients
-    nat_grads = compute_natural_grads(vgrad)
+    nat_grads = compute_natural_grads(total_data)
     
     # Server update the model
-    global_model = step(centroid, nat_grads, lr=eta, device=device)
-    print("Done!")
+    global_model = step(centroid, nat_grads, lr=eta)
+    print("Done!")   
     return global_model
