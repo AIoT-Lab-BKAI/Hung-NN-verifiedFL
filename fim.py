@@ -69,7 +69,7 @@ if __name__ == "__main__":
         my_training_dataset = clients_training_dataset[client_id]
         my_testing_dataset = clients_testing_dataset[client_id]
     
-        local_model = copy.deepcopy(global_model)
+        local_model = copy.copy(global_model)
         
         train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
         optimizer = torch.optim.SGD(local_model.parameters(), lr=1e-3)

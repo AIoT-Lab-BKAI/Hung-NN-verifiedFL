@@ -11,9 +11,7 @@ import torch, json, os, numpy as np, copy
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def train(dataloader, model, loss_fn, optimizer, gradL, alpha=0.5):  
-    src_model = copy.deepcopy(model).to(device)
-    src_model.freeze_grad()
+def train(dataloader, model, src_model, loss_fn, optimizer, gradL, alpha=0.5):      
     model = model.to(device)
     model.train()
          
@@ -38,12 +36,15 @@ def train(dataloader, model, loss_fn, optimizer, gradL, alpha=0.5):
 
         losses.append(loss.item())
     
-    gradL = gradL - alpha * (model - src_model)
+    # gradL = gradL - alpha * (model - src_model)
+    for p,q,k in zip(gradL.parameters(), model.parameters(), src_model.parameters()):
+        p = p - alpha * (q - k)
+        
     return losses
 
-def aggregate(current_model, models, h, alpha=0.5, total_clients=5):
-    h = h - alpha * (1.0 / total_clients * fmodule._model_sum(models) - current_model)
-    new_model = fmodule._model_average(models) - 1.0 / alpha * h
+def aggregate(current_model, aver_model, h, rate, alpha=0.5):
+    h = h - alpha * (rate * aver_model - current_model)
+    new_model = aver_model - 1.0 / alpha * h
     return new_model
 
 if __name__ == "__main__":
@@ -73,16 +74,21 @@ if __name__ == "__main__":
     server_h = global_model.zeros_like()
     clients_gradLs = [global_model.zeros_like() for client_id in client_id_list]
     
+    client_per_round = len(client_id_list)
+    
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
-        client_models_this_round = []
-        client_id_list_this_round = np.random.choice(client_id_list, size=10, replace=False).tolist()
+        client_id_list_this_round = np.random.choice(client_id_list, size=client_per_round, replace=False).tolist()
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
-        impact_factors = [len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round]
+        impact_factors = [1.0/client_per_round for client_id in client_id_list_this_round]
+        
+        aver_model = global_model.zeros_like()
+        src_model = copy.deepcopy(global_model)
+        src_model.freeze_grad()
         
         # Local training
-        for client_id in client_id_list_this_round:
-            print("    Client {} training... ".format(client_id), end="")
+        for client_id in sorted(client_id_list_this_round):
+            print("Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
@@ -98,22 +104,21 @@ if __name__ == "__main__":
             
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer, gradL=clients_gradLs[client_id])))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, src_model, loss_fn, optimizer, gradL=clients_gradLs[client_id])))
             local_loss_record[client_id].append(np.mean(epoch_loss))
-            
-            client_models_this_round.append(local_model)
-            
+                        
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_bfag_record[client_id].append(acc)
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
+            aver_model = fmodule._model_sum([aver_model, impact_factors[client_id] * local_model])
             
-        print("    # Server aggregating... ", end="")
+        print("# Server aggregating... ", end="")
         # Aggregation
-        global_model = aggregate(global_model, client_models_this_round, server_h, total_clients=len(client_id_list))
+        global_model = aggregate(global_model, aver_model, server_h, rate=client_per_round/len(client_id_list))
         print("Done!")
         
-        print("    # Server testing... ", end="")
+        print("# Server testing... ", end="")
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
         print(f"Done! Avg. acc {acc:>.3f}")
