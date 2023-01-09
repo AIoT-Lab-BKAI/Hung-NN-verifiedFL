@@ -5,13 +5,25 @@ import torch
 from utils.FIM2 import inverse, get_module_from_model
 from torch.utils.data import DataLoader
 
+hidden = 4096  
 
-class MLP3(FModule):
+class MLPv3(FModule):
     def __init__(self, bias=False):
         super().__init__()
-        self.fc1 = nn.Linear(3 * 32 * 32, 4096, bias=bias)
-        self.fc2 = nn.Linear(4096, 4096, bias=bias)
-        self.fc3 = nn.Linear(4096, 10, bias=bias)
+        self.fc1 = nn.Linear(3 * 32 * 32, hidden, bias=bias)
+        self.fc2 = nn.Linear(hidden, hidden, bias=bias)
+        self.fc3 = nn.Linear(hidden, 10, bias=bias)
+    
+    def forward(self, x):
+        x = x.view(x.shape[0], -1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        return self.fc3(x)
+    
+
+class MLP3(MLPv3):
+    def __init__(self):
+        super().__init__()
 
     def forward(self, x):
         self.a0 = x.view(x.shape[0], -1)
@@ -22,7 +34,7 @@ class MLP3(FModule):
         self.s3 = self.fc3(self.a2)
         self.FIM_params = [self.s1, self.s2, self.s3]
         return self.s3
-    
+        
 
 def compute_grads(model:MLP3, X:torch.Tensor, Y:torch.Tensor, loss_fn=torch.nn.KLDivLoss(reduction='batchmean')):
     pred = model(X)

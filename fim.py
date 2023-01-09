@@ -3,11 +3,10 @@ from utils.reader import read_jsons
 from utils.parser import read_arguments
 
 from utils import fmodule
-from pathlib import Path
 from torch.utils.data import DataLoader
 from utils.FIM2 import MLP2, FIM2_step
 from utils.FIM3 import MLP3, FIM3_step
-import torch, json, os, numpy as np, copy, random
+import torch, numpy as np, copy
 import torch.nn.functional as F
 
 
@@ -18,14 +17,16 @@ def train(dataloader, model, optimizer):
     model = model.cuda()
     model.train()
     losses = []
+    loss_fn = torch.nn.KLDivLoss(reduction='batchmean')
         
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
 
         # Compute prediction error
-        pred = F.softmax(model(X), dim=1) 
-        ground = F.softmax(F.one_hot(y, 10) * 1.0, dim=1) 
-        loss = torch.sum(ground * torch.log(ground/pred)) / (ground.shape[0] * ground.shape[1])
+        pred = F.log_softmax(model(X), dim=1) 
+        ground = F.log_softmax(F.one_hot(y, 10) * 1.0, dim=1)
+        # loss = torch.sum(ground * torch.log(1/pred)) / (ground.shape[0] * ground.shape[1])
+        loss = loss_fn(pred, ground)
         
         # Backpropagation
         optimizer.zero_grad()
@@ -86,7 +87,7 @@ if __name__ == "__main__":
         print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, test acc {test_acc:>.3f}, train acc {train_acc:>.3f}, shift length {norm_diff:>.5f}")
 
     centroid = fmodule._model_sum([model * pk for model, pk in zip(client_models, impact_factors)])
-    global_model = fim_step(centroid, clients_training_dataset, client_id_list, eta=1).to(device)
+    global_model = fim_step(centroid, clients_training_dataset, client_id_list, eta=1, device=device)
     
     # Testing
     print("Server testing... ", end="")

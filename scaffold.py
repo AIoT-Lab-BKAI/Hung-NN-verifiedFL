@@ -4,8 +4,8 @@ from utils.parser import read_arguments
 
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.FIM2 import MLP2
-from utils.FIM3 import MLP3
+from utils.FIM2 import MLPv2
+from utils.FIM3 import MLPv3
 from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 
@@ -50,9 +50,9 @@ if __name__ == "__main__":
     client_id_list = [i for i in range(num_client)]
     
     if args.dataset == "mnist":
-        global_model = MLP2().to(device)
+        global_model = MLPv2().to(device)
     elif args.dataset == "cifar10":
-        global_model = MLP3().to(device)
+        global_model = MLPv3().to(device)
     else:
         raise NotImplementedError
     
@@ -73,12 +73,12 @@ if __name__ == "__main__":
         client_dys = []
         client_dcs = []
         
-        client_id_list_this_round = np.random.choice(client_id_list, size=10, replace=False).tolist()
+        client_id_list_this_round = np.random.choice(client_id_list, size=len(client_id_list), replace=False).tolist()
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
         impact_factors = [len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round]
     
         # Local training
-        for client_id in client_id_list_this_round:
+        for client_id in sorted(client_id_list_this_round):
             print("    Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
