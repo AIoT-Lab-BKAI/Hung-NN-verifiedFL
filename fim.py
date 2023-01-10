@@ -6,7 +6,7 @@ from utils import fmodule
 from torch.utils.data import DataLoader
 from utils.FIM2 import MLP2, FIM2_step
 from utils.FIM3 import MLP3, FIM3_step
-import torch, numpy as np, copy
+import torch, numpy as np, copy, json
 import torch.nn.functional as F
 
 
@@ -77,9 +77,7 @@ if __name__ == "__main__":
         epoch_loss = []
         for t in range(epochs):
             epoch_loss.append(np.mean(train(train_dataloader, local_model, optimizer)))
-        
-        # client_models.append(local_model)
-        
+                
         # Testing the local_model
         test_acc, _ = test(local_model, my_testing_dataset)
         train_acc, _ = test(local_model, my_training_dataset)
@@ -90,12 +88,17 @@ if __name__ == "__main__":
         
     global_model = fim_step(centroid, clients_training_dataset, client_id_list, eta=1, device=device)
     
+    results = {}
     # Testing
     print("Server testing... ", end="")
     acc, cfmtx = test(global_model, global_testing_dataset, device)
     print(f"Done! Avg. acc {acc:>.3f}")
+    results['fim'] = acc
 
     # print_cfmtx(cfmtx)
     print("Centroid testing... ", end="")
     acc, cfmtx = test(centroid, global_testing_dataset, device)
     print(f"Done! Avg. acc {acc:>.3f}")
+    results['centroid'] = acc
+    
+    json.dump(results, open(f"records/{args.exp_folder}/fim/results.json", "w"))
