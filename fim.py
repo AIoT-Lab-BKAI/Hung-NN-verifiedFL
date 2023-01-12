@@ -105,7 +105,7 @@ if __name__ == "__main__":
     print(f"Done! Avg. acc {acc:>.3f}")
     results['centroid'] = acc
     
-    if not Path(f"records/{args.exp_folder}/fim").exists():
-        os.makedirs(f"records/{args.exp_folder}/fim")
+    if not Path(f"records/{args.idx_folder}/fim").exists():
+        os.makedirs(f"records/{args.idx_folder}/fim")
         
-    json.dump(results, open(f"records/{args.exp_folder}/fim/results.json", "w"))
+    json.dump(results, open(f"records/{args.idx_folder}/fim/results.json", "w"))

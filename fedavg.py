@@ -9,6 +9,7 @@ from utils.FIM3 import MLPv3
 from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 import torch.nn.functional as F
+import wandb
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -66,9 +67,12 @@ if __name__ == "__main__":
         
         aver_model = global_model.zeros_like()
         # Local training
+        inference_acc = []
+        training_loss = []
+        
         for client_id in client_id_list_this_round:
             if args.verbose:
-                print("    Client {} training... ".format(client_id), end="")
+                print("Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
@@ -77,6 +81,7 @@ if __name__ == "__main__":
             # Testing the global_model to the local data
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_afag_record[client_id].append(acc)
+            inference_acc.append(acc)
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             loss_fn = torch.nn.CrossEntropyLoss()
@@ -86,8 +91,7 @@ if __name__ == "__main__":
             for t in range(epochs):
                 epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
-            
-            # client_models_this_round.append(local_model)
+            training_loss.append(local_loss_record[client_id][-1])
             
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)
@@ -97,23 +101,29 @@ if __name__ == "__main__":
             
             aver_model = fmodule._model_sum([aver_model, impact_factors[client_id] * local_model])
             
-        print("    # Server aggregating... ", end="")
+        print("# Server aggregating... ", end="")
         # Aggregation
         global_model = copy.deepcopy(aver_model)
         print("Done!")
         
-        print("    # Server testing... ", end="")
+        print("# Server testing... ", end="")
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
     
         print(f"Done! Avg. acc {acc:>.3f}")
-        # print_cfmtx(cfmtx)
         
-    if not Path(f"records/{args.exp_folder}/E{epochs}/fedavg").exists():
-        os.makedirs(f"records/{args.exp_folder}/E{epochs}/fedavg")
+        if args.wandb:
+            wandb.log({
+                    "Mean inference accuracy": np.mean(inference_acc),
+                    "Mean training loss": np.mean(training_loss),
+                    "Global accuracy": acc,
+                })
+        
+    if not Path(f"records/{args.idx_folder}/E{epochs}/fedavg").exists():
+        os.makedirs(f"records/{args.idx_folder}/E{epochs}/fedavg")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/fedavg/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/fedavg/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/fedavg/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/fedavg/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.idx_folder}/E{epochs}/fedavg/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.idx_folder}/E{epochs}/fedavg/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.idx_folder}/E{epochs}/fedavg/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.idx_folder}/E{epochs}/fedavg/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     

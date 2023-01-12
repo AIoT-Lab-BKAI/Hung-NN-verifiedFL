@@ -1,4 +1,5 @@
 import json
+import os
 from utils.dataloader import CustomDataset
 from torchvision import datasets, transforms
 
@@ -51,8 +52,8 @@ def read_jsons(idx_folder, data_folder, dataset="mnist"):
     else:
         raise Exception("Not support", dataset, "yet")
     
-    training_jsons = json.load(open(f"{idx_folder, data_folder}/train.json", 'r'))
-    testing_jsons = json.load(open(f"{idx_folder, data_folder}/test.json", 'r'))
+    training_jsons = json.load(open(os.path.join(idx_folder, "train.json"), 'r'))
+    testing_jsons = json.load(open(os.path.join(idx_folder, "test.json"), 'r'))
     
     training_set = []
     testing_set = []

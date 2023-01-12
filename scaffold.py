@@ -8,6 +8,7 @@ from utils.FIM2 import MLPv2
 from utils.FIM3 import MLPv3
 from utils import fmodule
 import torch, json, os, numpy as np, copy, random
+import wandb
 
 
 process_device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -92,6 +93,9 @@ if __name__ == "__main__":
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
         impact_factors = {client_id: 1/client_per_round for client_id in client_id_list_this_round}
     
+        inference_acc = []
+        training_loss = []
+        
         # Local training
         for client_id in client_id_list_this_round:
             if args.verbose:
@@ -104,6 +108,7 @@ if __name__ == "__main__":
             # Testing the global_model to the local data
             acc, cfmtx = test(global_model, my_testing_dataset, device=local_model.get_device())
             local_acc_afag_record[client_id].append(acc)
+            inference_acc.append(acc)
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             loss_fn = torch.nn.CrossEntropyLoss()
@@ -118,7 +123,7 @@ if __name__ == "__main__":
                 losses, num_batch = train(train_dataloader, local_model, loss_fn, optimizer, cg, client_cs[client_id])
                 epoch_loss.append(np.mean(losses))
                 K += num_batch
-                
+            
             with torch.no_grad():
                 dy = local_model - global_model
                 dc = -1.0 / (K * 1e-3) * dy - cg
@@ -127,6 +132,8 @@ if __name__ == "__main__":
                 aver_dcs = fmodule._model_sum([aver_dcs, impact_factors[client_id] * dc])
     
             local_loss_record[client_id].append(np.mean(epoch_loss))
+            training_loss.append(local_loss_record[client_id][-1])
+            
             client_cs[client_id] = client_cs[client_id].to(origin_device)
             
             # Testing the local_model to its own data
@@ -145,12 +152,18 @@ if __name__ == "__main__":
         global_cfmtx_record.append(cfmtx)
         print(f"Done! Avg. acc {acc:>.3f}")
 
+        if args.wandb:
+            wandb.log({
+                    "Mean inference accuracy": np.mean(inference_acc),
+                    "Mean training loss": np.mean(training_loss),
+                    "Global accuracy": acc,
+                })
         
-    if not Path(f"records/{args.exp_folder}/E{epochs}/scaffold").exists():
-        os.makedirs(f"records/{args.exp_folder}/E{epochs}/scaffold")
+    if not Path(f"records/{args.idx_folder}/E{epochs}/scaffold").exists():
+        os.makedirs(f"records/{args.idx_folder}/E{epochs}/scaffold")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.idx_folder}/E{epochs}/scaffold/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.idx_folder}/E{epochs}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.idx_folder}/E{epochs}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.idx_folder}/E{epochs}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     

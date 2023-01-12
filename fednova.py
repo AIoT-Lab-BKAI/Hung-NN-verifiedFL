@@ -9,6 +9,7 @@ from utils.FIM3 import MLPv3
 from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 import torch.nn.functional as F
+import wandb
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -69,6 +70,10 @@ if __name__ == "__main__":
         impact_factors = {client_id: len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round}
         delta = global_model.zeros_like()
         tau_eff = 0
+        
+        inference_acc = []
+        training_loss = []
+        
         # Local training
         for client_id in sorted(client_id_list_this_round):
             if args.verbose:
@@ -81,6 +86,7 @@ if __name__ == "__main__":
             # Testing the global_model to the local data
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_afag_record[client_id].append(acc)
+            inference_acc.append(acc)
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             loss_fn = torch.nn.CrossEntropyLoss()
@@ -90,9 +96,8 @@ if __name__ == "__main__":
             for t in range(epochs):
                 epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
-            
-            # client_models_this_round.append(local_model)
-            
+            training_loss.append(local_loss_record[client_id][-1])
+                        
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_bfag_record[client_id].append(acc)
@@ -114,11 +119,18 @@ if __name__ == "__main__":
         print(f"Done! Avg. acc {acc:>.3f}")
         # print_cfmtx(cfmtx)
         
-    if not Path(f"records/{args.exp_folder}/E{epochs}/fednova").exists():
-        os.makedirs(f"records/{args.exp_folder}/E{epochs}/fednova")
+        if args.wandb:
+            wandb.log({
+                    "Mean inference accuracy": np.mean(inference_acc),
+                    "Mean training loss": np.mean(training_loss),
+                    "Global accuracy": acc,
+                })
+        
+    if not Path(f"records/{args.idx_folder}/E{epochs}/fednova").exists():
+        os.makedirs(f"records/{args.idx_folder}/E{epochs}/fednova")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/fednova/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/fednova/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/fednova/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/fednova/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.idx_folder}/E{epochs}/fednova/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.idx_folder}/E{epochs}/fednova/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.idx_folder}/E{epochs}/fednova/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.idx_folder}/E{epochs}/fednova/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     
