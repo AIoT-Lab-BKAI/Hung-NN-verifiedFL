@@ -52,12 +52,12 @@ def aggregate(current_model, aver_model, h, rate, alpha=0.5):
     return new_model
 
 if __name__ == "__main__":
-    args = read_arguments()
+    args = read_arguments(algorithm=os.path.basename(__file__).split('.py')[0])
     print(args)
     batch_size = args.batch_size
     epochs = args.epochs
     
-    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.exp_folder, args.dataset)
+    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.idx_folder, args.data_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
@@ -102,7 +102,8 @@ if __name__ == "__main__":
         
         # Local training
         for client_id in client_id_list_this_round:
-            print("Client {} training... ".format(client_id), end="")
+            if args.verbose:
+                print("Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
@@ -128,7 +129,8 @@ if __name__ == "__main__":
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_bfag_record[client_id].append(acc)
-            print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
+            if args.verbose:
+                print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
             aver_model = fmodule._model_sum([aver_model, impact_factors[client_id] * local_model])
             
         print("# Server aggregating... ", end="")
