@@ -4,8 +4,8 @@ from utils.parser import read_arguments
 
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.FIM2 import MLP2
-from utils.FIM3 import MLP3
+from utils.FIM2 import MLPv2
+from utils.FIM3 import MLPv3
 from utils import fmodule
 import torch, json, os, numpy as np, copy
 
@@ -50,12 +50,12 @@ if __name__ == "__main__":
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
     if args.dataset == "mnist":
-        global_model = MLP2().to(device)
+        global_model = MLPv2().to(device)
     elif args.dataset == "cifar10":
-        global_model = MLP3().to(device)
+        global_model = MLPv3().to(device)
     else:
         raise NotImplementedError
-    
+        
     local_loss_record = {client_id:[] for client_id in client_id_list}
     local_acc_bfag_record = {client_id:[] for client_id in client_id_list}
     local_acc_afag_record = {client_id:[] for client_id in client_id_list}
@@ -63,17 +63,17 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     
+    client_per_round = len(client_id_list)
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
-        client_models_this_round = []
-        client_id_list_this_round = np.random.choice(client_id_list, size=len(client_id_list), replace=False).tolist()
+        client_id_list_this_round = sorted(np.random.choice(client_id_list, size=client_per_round, replace=False).tolist())
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
-        impact_factors = [len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round]
+        impact_factors = {client_id: 1/len(client_id_list_this_round) for client_id in client_id_list_this_round}
         
         aver_model = global_model.zeros_like()
         # Local training
-        for client_id in sorted(client_id_list_this_round):
-            print("Client {} training... ".format(client_id), end="")
+        for client_id in client_id_list_this_round:
+            print("    Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
@@ -98,18 +98,26 @@ if __name__ == "__main__":
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_bfag_record[client_id].append(acc)
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
+            
             aver_model = fmodule._model_sum([aver_model, impact_factors[client_id] * local_model])
+            
+        print("    # Server aggregating... ", end="")
+        # Aggregation
+        global_model = copy.deepcopy(aver_model)
+        print("Done!")
         
-        print("# Server testing... ", end="")
+        print("    # Server testing... ", end="")
         acc, cfmtx = test(global_model, global_testing_dataset)
         global_cfmtx_record.append(cfmtx)
-        print(f"Done! Avg. acc {acc:>.3f}")
-        
-    if not Path(f"records/{args.exp_folder}/fedprox").exists():
-        os.makedirs(f"records/{args.exp_folder}/fedprox")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/fedprox/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/fedprox/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/fedprox/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fedprox/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+        print(f"Done! Avg. acc {acc:>.3f}")
+        # print_cfmtx(cfmtx)
+        
+    if not Path(f"records/{args.exp_folder}/E{epochs}/fedprox").exists():
+        os.makedirs(f"records/{args.exp_folder}/E{epochs}/fedprox")
+    
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/fedprox/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/fedprox/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/fedprox/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/fedprox/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     

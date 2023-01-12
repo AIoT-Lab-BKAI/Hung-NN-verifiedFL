@@ -1,4 +1,4 @@
-from utils.train_smt import test, print_cfmtx, NumpyEncoder, check_global_contrastive
+from utils.train_smt import test, NumpyEncoder
 from utils.reader import read_jsons
 from utils.parser import read_arguments
 
@@ -10,14 +10,17 @@ from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+process_device = "cuda:0" if torch.cuda.is_available() else "cpu"
+buffer_device_1 = "cuda:1" if torch.cuda.is_available() else "cpu"
+buffer_device_2 = "cuda:2" if torch.cuda.is_available() else "cpu"
+buffer_device_3 = "cuda:3" if torch.cuda.is_available() else "cpu"
 
 def train(train_dataloader, local_model, loss_fn, optimizer, cg, c):
     losses = []
     num_batches = 0
     for batch_idx, (X, y) in enumerate(train_dataloader):
         local_model.zero_grad()
-        X, y = X.to(device), y.to(device)
+        X, y = X.to(process_device), y.to(process_device)
         
         pred = local_model(X)
         loss = loss_fn(pred, y)
@@ -32,9 +35,7 @@ def train(train_dataloader, local_model, loss_fn, optimizer, cg, c):
     return losses, num_batches
 
 
-def aggregate(global_model, cg, aver_dys, aver_dcs, eta=1.0, rate=1.0):
-    # dw = fmodule._model_average(dys)
-    # dc = fmodule._model_average(dcs)
+def aggregate(global_model, cg, aver_dys, aver_dcs, eta=1.0, rate=1.0):   
     new_model = global_model + eta * aver_dys
     new_c = cg + 1.0 * rate * aver_dcs
     return new_model, new_c
@@ -50,9 +51,9 @@ if __name__ == "__main__":
     client_id_list = [i for i in range(num_client)]
     
     if args.dataset == "mnist":
-        global_model = MLPv2().to(device)
+        global_model = MLPv2().to(process_device)
     elif args.dataset == "cifar10":
-        global_model = MLPv3().to(device)
+        global_model = MLPv3().to(process_device)
     else:
         raise NotImplementedError
     
@@ -63,7 +64,20 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     
-    client_cs = {client_id: global_model.zeros_like() for client_id in client_id_list}
+    client_cs = {}
+    torch.manual_seed(0)
+    for client_id in client_id_list:
+        if client_id < len(client_id_list) * 5/13:
+            print("Init client", client_id, "to ", buffer_device_1)
+            client_cs[client_id] = global_model.zeros_like().to(buffer_device_1)
+        elif client_id < 2 * len(client_id_list) * 5/13:
+            print("Init client", client_id, "to ", buffer_device_2)
+            client_cs[client_id] = global_model.zeros_like().to(buffer_device_2)
+        else:
+            print("Init client", client_id, "to ", buffer_device_3)
+            client_cs[client_id] = global_model.zeros_like().to(buffer_device_3)
+            
+    # client_cs = {client_id: global_model.zeros_like().cpu() for client_id in client_id_list}
     cg = global_model.zeros_like()
     cg.freeze_grad()
     
@@ -87,7 +101,7 @@ if __name__ == "__main__":
             
             local_model = copy.deepcopy(global_model)
             # Testing the global_model to the local data
-            acc, cfmtx = test(global_model, my_testing_dataset)
+            acc, cfmtx = test(global_model, my_testing_dataset, device=local_model.get_device())
             local_acc_afag_record[client_id].append(acc)
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
@@ -96,11 +110,14 @@ if __name__ == "__main__":
             
             epoch_loss = []
             K = 0
+            
+            origin_device = client_cs[client_id].get_device()
+            client_cs[client_id] = client_cs[client_id].to(process_device)
             for t in range(epochs):
                 losses, num_batch = train(train_dataloader, local_model, loss_fn, optimizer, cg, client_cs[client_id])
                 epoch_loss.append(np.mean(losses))
                 K += num_batch
-            
+                
             with torch.no_grad():
                 dy = local_model - global_model
                 dc = -1.0 / (K * 1e-3) * dy - cg
@@ -109,9 +126,10 @@ if __name__ == "__main__":
                 aver_dcs = fmodule._model_sum([aver_dcs, impact_factors[client_id] * dc])
     
             local_loss_record[client_id].append(np.mean(epoch_loss))
+            client_cs[client_id] = client_cs[client_id].to(origin_device)
             
             # Testing the local_model to its own data
-            acc, cfmtx = test(local_model, my_testing_dataset)
+            acc, cfmtx = test(local_model, my_testing_dataset, device=local_model.get_device())
             local_acc_bfag_record[client_id].append(acc)
             print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
         
@@ -126,11 +144,11 @@ if __name__ == "__main__":
         print(f"Done! Avg. acc {acc:>.3f}")
 
         
-    if not Path(f"records/{args.exp_folder}/scaffold").exists():
-        os.makedirs(f"records/{args.exp_folder}/scaffold")
+    if not Path(f"records/{args.exp_folder}/E{epochs}/scaffold").exists():
+        os.makedirs(f"records/{args.exp_folder}/E{epochs}/scaffold")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/scaffold/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     

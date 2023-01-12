@@ -20,6 +20,7 @@ def read_arguments():
     parser.add_argument("--round", type=int, default=1)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--contrastive", type=int, default=0)
+    parser.add_argument("--client_per_round", type=int, default=10)
     parser.add_argument("--dataset", type=str, default="mnist")
     parser.add_argument("--exp_folder", type=str, default="./jsons/baseline/simple_3")
     

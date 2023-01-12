@@ -58,17 +58,15 @@ if __name__ == "__main__":
     global_cfmtx_record = []
     U_cfmtx_record = []
     
-    client_taus = [epochs * np.ceil(len(clients_training_dataset[client_id])/batch_size) for client_id in client_id_list]
-    
+    client_taus = {client_id: epochs * np.ceil(len(clients_training_dataset[client_id])/batch_size) for client_id in client_id_list}
+
     client_per_round = len(client_id_list)
     for cur_round in range(args.round):
         print("============ Round {} ==============".format(cur_round))
         client_id_list_this_round = sorted(np.random.choice(client_id_list, size=client_per_round, replace=False).tolist())
         total_sample_this_round = np.sum([len(clients_training_dataset[i]) for i in client_id_list_this_round])
         
-        client_taus = {client_id: epochs * np.ceil(len(clients_training_dataset[client_id])/batch_size) for client_id in client_id_list}
         impact_factors = {client_id: len(clients_training_dataset[client_id])/total_sample_this_round for client_id in client_id_list_this_round}
-        
         delta = global_model.zeros_like()
         tau_eff = 0
         # Local training
@@ -114,11 +112,11 @@ if __name__ == "__main__":
         print(f"Done! Avg. acc {acc:>.3f}")
         # print_cfmtx(cfmtx)
         
-    if not Path(f"records/{args.exp_folder}/fednova").exists():
-        os.makedirs(f"records/{args.exp_folder}/fednova")
+    if not Path(f"records/{args.exp_folder}/E{epochs}/fednova").exists():
+        os.makedirs(f"records/{args.exp_folder}/E{epochs}/fednova")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/fednova/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/fednova/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/fednova/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/fednova/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/fednova/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/fednova/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/fednova/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/fednova/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     

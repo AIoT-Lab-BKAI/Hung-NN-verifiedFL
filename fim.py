@@ -8,6 +8,8 @@ from utils.FIM2 import MLP2, FIM2_step
 from utils.FIM3 import MLP3, FIM3_step
 import torch, numpy as np, copy, json
 import torch.nn.functional as F
+from pathlib import Path
+import os
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -101,4 +103,7 @@ if __name__ == "__main__":
     print(f"Done! Avg. acc {acc:>.3f}")
     results['centroid'] = acc
     
+    if not Path(f"records/{args.exp_folder}/fim").exists():
+        os.makedirs(f"records/{args.exp_folder}/fim")
+        
     json.dump(results, open(f"records/{args.exp_folder}/fim/results.json", "w"))
