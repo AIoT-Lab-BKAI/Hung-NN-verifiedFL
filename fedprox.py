@@ -63,6 +63,7 @@ if __name__ == "__main__":
     
     global_cfmtx_record = []
     U_cfmtx_record = []
+    max_acc = 0
     
     client_per_round = len(client_id_list)
     for cur_round in range(args.round):
@@ -119,11 +120,13 @@ if __name__ == "__main__":
         print(f"Done! Avg. acc {acc:>.3f}")
         # print_cfmtx(cfmtx)
         
+        max_acc = max(max_acc, acc)
         if args.wandb:
             wandb.log({
                     "Mean inference accuracy": np.mean(inference_acc),
                     "Mean training loss": np.mean(training_loss),
                     "Global accuracy": acc,
+                    "Max accuracy": max_acc
                 })
         
     if not Path(f"records/{args.idx_folder}/E{epochs}/fedprox").exists():

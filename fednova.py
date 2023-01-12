@@ -58,6 +58,7 @@ if __name__ == "__main__":
     
     global_cfmtx_record = []
     U_cfmtx_record = []
+    max_acc = 0
     
     client_taus = {client_id: epochs * np.ceil(len(clients_training_dataset[client_id])/batch_size) for client_id in client_id_list}
 
@@ -119,11 +120,13 @@ if __name__ == "__main__":
         print(f"Done! Avg. acc {acc:>.3f}")
         # print_cfmtx(cfmtx)
         
+        max_acc = max(max_acc, acc)
         if args.wandb:
             wandb.log({
                     "Mean inference accuracy": np.mean(inference_acc),
                     "Mean training loss": np.mean(training_loss),
                     "Global accuracy": acc,
+                    "Max accuracy": max_acc
                 })
         
     if not Path(f"records/{args.idx_folder}/E{epochs}/fednova").exists():
