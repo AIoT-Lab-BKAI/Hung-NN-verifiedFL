@@ -10,18 +10,16 @@ from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 import wandb
 
-
-process_device = "cuda:0" if torch.cuda.is_available() else "cpu"
-buffer_device_1 = "cuda:1" if torch.cuda.is_available() else "cpu"
-buffer_device_2 = "cuda:2" if torch.cuda.is_available() else "cpu"
-buffer_device_3 = "cuda:3" if torch.cuda.is_available() else "cpu"
+devices = []
+for i in range(torch.cuda.device_count()):
+    devices.append(f"cuda:{i}")
 
 def train(train_dataloader, local_model, loss_fn, optimizer, cg, c):
     losses = []
     num_batches = 0
     for batch_idx, (X, y) in enumerate(train_dataloader):
         local_model.zero_grad()
-        X, y = X.to(process_device), y.to(process_device)
+        X, y = X.to(devices[0]), y.to(devices[0])
         
         pred = local_model(X)
         loss = loss_fn(pred, y)
@@ -52,9 +50,9 @@ if __name__ == "__main__":
     client_id_list = [i for i in range(num_client)]
     
     if args.dataset == "mnist":
-        global_model = MLPv2().to(process_device)
+        global_model = MLPv2().to(devices[0])
     elif args.dataset == "cifar10":
-        global_model = MLPv3().to(process_device)
+        global_model = MLPv3().to(devices[0])
     else:
         raise NotImplementedError
     
@@ -67,19 +65,21 @@ if __name__ == "__main__":
     max_acc = 0
     
     client_cs = {}
-    torch.manual_seed(0)
-    for client_id in client_id_list:
-        if client_id < len(client_id_list) * 5/13:
-            print("Init client", client_id, "to ", buffer_device_1)
-            client_cs[client_id] = global_model.zeros_like().to(buffer_device_1)
-        elif client_id < 2 * len(client_id_list) * 5/13:
-            print("Init client", client_id, "to ", buffer_device_2)
-            client_cs[client_id] = global_model.zeros_like().to(buffer_device_2)
-        else:
-            print("Init client", client_id, "to ", buffer_device_3)
-            client_cs[client_id] = global_model.zeros_like().to(buffer_device_3)
+    start_index = 0
+    for device in devices[1:]:
+        count = 0
+        for client_id in client_id_list[start_index:]:
+            try:
+                print("Init client", client_id, "to ", device)
+                client_cs[client_id] = global_model.zeros_like().to(device)
+                count += 1
+            except:
+                break
             
-    # client_cs = {client_id: global_model.zeros_like().cpu() for client_id in client_id_list}
+            if count > len(client_id_list)/len(devices[1:]):
+                start_index = client_id + 1
+                break
+            
     cg = global_model.zeros_like()
     cg.freeze_grad()
     
@@ -119,7 +119,7 @@ if __name__ == "__main__":
             K = 0
             
             origin_device = client_cs[client_id].get_device()
-            client_cs[client_id] = client_cs[client_id].to(process_device)
+            client_cs[client_id] = client_cs[client_id].to(devices[0])
             for t in range(epochs):
                 losses, num_batch = train(train_dataloader, local_model, loss_fn, optimizer, cg, client_cs[client_id])
                 epoch_loss.append(np.mean(losses))

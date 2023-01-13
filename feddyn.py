@@ -10,20 +10,19 @@ from utils import fmodule
 import torch, json, os, numpy as np, copy
 import wandb
 
-process_device = "cuda:0" if torch.cuda.is_available() else "cpu"
-buffer_device_1 = "cuda:1" if torch.cuda.is_available() else "cpu"
-buffer_device_2 = "cuda:2" if torch.cuda.is_available() else "cpu"
-buffer_device_3 = "cuda:3" if torch.cuda.is_available() else "cpu"
+devices = []
+for i in range(torch.cuda.device_count()):
+    devices.append(f"cuda:{i}")
 
 
 def train(dataloader, model, src_model, loss_fn, optimizer, gradL, alpha=0.5):      
-    model = model.to(process_device)
+    model = model.to(devices[0])
     model.train()
          
     losses = []
         
     for batch, (X, y) in enumerate(dataloader):
-        X, y = X.to(process_device), y.to(process_device)
+        X, y = X.to(devices[0]), y.to(devices[0])
 
         # Compute prediction error
         pred = model(X)
@@ -63,9 +62,9 @@ if __name__ == "__main__":
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
     if args.dataset == "mnist":
-        global_model = MLP2().to(process_device)
+        global_model = MLP2().to(devices[0])
     elif args.dataset == "cifar10":
-        global_model = MLP3().to(process_device)
+        global_model = MLP3().to(devices[0])
     else:
         raise NotImplementedError
     
@@ -78,18 +77,21 @@ if __name__ == "__main__":
     max_acc = 0
     
     server_h = global_model.zeros_like()
-    clients_gradLs = {client_id: global_model.zeros_like().cpu() for client_id in client_id_list}
-    torch.manual_seed(0)
-    for client_id in client_id_list:
-        if client_id < len(client_id_list) * 5/13:
-            print("Init client", client_id, "to ", buffer_device_1)
-            clients_gradLs[client_id] = global_model.zeros_like().to(buffer_device_1)
-        elif client_id < 2 * len(client_id_list) * 5/13:
-            print("Init client", client_id, "to ", buffer_device_2)
-            clients_gradLs[client_id] = global_model.zeros_like().to(buffer_device_2)
-        else:
-            print("Init client", client_id, "to ", buffer_device_3)
-            clients_gradLs[client_id] = global_model.zeros_like().to(buffer_device_3)
+    clients_gradLs = {}       
+    start_index = 0
+    for device in devices[1:]:
+        count = 0
+        for client_id in client_id_list[start_index:]:
+            try:
+                print("Init client", client_id, "to ", device)
+                clients_gradLs[client_id] = global_model.zeros_like().to(device)
+                count += 1
+            except:
+                break
+            
+            if count > len(client_id_list)/len(devices[1:]):
+                start_index = client_id + 1
+                break
     
     client_per_round = len(client_id_list)
     
@@ -125,7 +127,7 @@ if __name__ == "__main__":
             
             epoch_loss = []
             origin_device = clients_gradLs[client_id].get_device()
-            clients_gradLs[client_id] = clients_gradLs[client_id].to(process_device)
+            clients_gradLs[client_id] = clients_gradLs[client_id].to(devices[0])
             for t in range(epochs):
                 epoch_loss.append(np.mean(train(train_dataloader, local_model, src_model, loss_fn, optimizer, gradL=clients_gradLs[client_id])))
             
