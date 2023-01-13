@@ -1,18 +1,19 @@
 import json
+import os
 from utils.dataloader import CustomDataset
 from torchvision import datasets, transforms
 
-def read_jsons(folder_path, dataset="mnist"):
+def read_jsons(idx_folder, data_folder, dataset="mnist"):
     
     if dataset == "mnist":
         training_data = datasets.MNIST(
-            root="../perFL/benchmark/mnist/data",
+            root=data_folder,
             train=True,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
         )
         testing_data = datasets.MNIST(
-            root="../perFL/benchmark/mnist/data",
+            root=data_folder,
             train=False,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
@@ -20,14 +21,14 @@ def read_jsons(folder_path, dataset="mnist"):
         
     elif dataset == "cifar10":
         training_data = datasets.CIFAR10(
-            root="../perFL/benchmark/cifar10/data",
+            root=data_folder,
             train=True,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
         )
 
         testing_data = datasets.CIFAR10(
-            root="../perFL/benchmark/cifar10/data",
+            root=data_folder,
             train=False,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
@@ -35,14 +36,14 @@ def read_jsons(folder_path, dataset="mnist"):
         
     elif dataset == "cifar100":
         training_data = datasets.CIFAR100(
-            root="../perFL/benchmark/cifar100/data",
+            root=data_folder,
             train=True,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
         )
 
         testing_data = datasets.CIFAR100(
-            root="../perFL/benchmark/cifar100/data",
+            root=data_folder,
             train=False,
             download=False,
             transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
@@ -51,8 +52,8 @@ def read_jsons(folder_path, dataset="mnist"):
     else:
         raise Exception("Not support", dataset, "yet")
     
-    training_jsons = json.load(open(f"{folder_path}/train.json", 'r'))
-    testing_jsons = json.load(open(f"{folder_path}/test.json", 'r'))
+    training_jsons = json.load(open(os.path.join(idx_folder, "train.json"), 'r'))
+    testing_jsons = json.load(open(os.path.join(idx_folder, "test.json"), 'r'))
     
     training_set = []
     testing_set = []

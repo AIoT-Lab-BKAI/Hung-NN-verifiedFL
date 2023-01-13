@@ -40,12 +40,12 @@ def train(dataloader, model, optimizer):
 
 
 if __name__ == "__main__":
-    args = read_arguments()
+    args = read_arguments(algorithm=os.path.basename(__file__).split('.py')[0])
     print(args)
     batch_size = args.batch_size
     epochs = args.epochs
         
-    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.exp_folder, args.dataset)
+    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.idx_folder, args.data_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
@@ -66,7 +66,8 @@ if __name__ == "__main__":
     
     # Local training
     for client_id in client_id_list:
-        print(f"Client {client_id:>2d} training... ", end="")
+        if args.verbose:
+            print(f"Client {client_id:>2d} training... ", end="")
         # Training process
         my_training_dataset = clients_training_dataset[client_id]
         my_testing_dataset = clients_testing_dataset[client_id]
@@ -85,7 +86,8 @@ if __name__ == "__main__":
         train_acc, _ = test(local_model, my_training_dataset)
         
         norm_diff = (local_model - global_model).norm()
-        print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, test acc {test_acc:>.3f}, train acc {train_acc:>.3f}, shift length {norm_diff:>.5f}")
+        if args.verbose:
+            print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, test acc {test_acc:>.3f}, train acc {train_acc:>.3f}, shift length {norm_diff:>.5f}")
         centroid = fmodule._model_sum([centroid, impact_factors[client_id] * local_model])
         
     global_model = fim_step(centroid, clients_training_dataset, client_id_list, eta=1, device=device)
@@ -103,7 +105,7 @@ if __name__ == "__main__":
     print(f"Done! Avg. acc {acc:>.3f}")
     results['centroid'] = acc
     
-    if not Path(f"records/{args.exp_folder}/fim").exists():
-        os.makedirs(f"records/{args.exp_folder}/fim")
+    if not Path(f"records/{args.idx_folder}/fim").exists():
+        os.makedirs(f"records/{args.idx_folder}/fim")
         
-    json.dump(results, open(f"records/{args.exp_folder}/fim/results.json", "w"))
+    json.dump(results, open(f"records/{args.idx_folder}/fim/results.json", "w"))

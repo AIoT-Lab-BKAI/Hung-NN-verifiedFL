@@ -8,6 +8,7 @@ from utils.FIM2 import MLP2
 from utils.FIM3 import MLP3
 from utils import fmodule
 import torch, json, os, numpy as np, copy
+import wandb
 
 process_device = "cuda:0" if torch.cuda.is_available() else "cpu"
 buffer_device_1 = "cuda:1" if torch.cuda.is_available() else "cpu"
@@ -52,12 +53,12 @@ def aggregate(current_model, aver_model, h, rate, alpha=0.5):
     return new_model
 
 if __name__ == "__main__":
-    args = read_arguments()
+    args = read_arguments(algorithm=os.path.basename(__file__).split('.py')[0])
     print(args)
     batch_size = args.batch_size
     epochs = args.epochs
     
-    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.exp_folder, args.dataset)
+    num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.idx_folder, args.data_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
     
@@ -74,6 +75,7 @@ if __name__ == "__main__":
     
     global_cfmtx_record = []
     U_cfmtx_record = []
+    max_acc = 0
     
     server_h = global_model.zeros_like()
     clients_gradLs = {client_id: global_model.zeros_like().cpu() for client_id in client_id_list}
@@ -100,9 +102,13 @@ if __name__ == "__main__":
         src_model = copy.deepcopy(global_model)
         src_model.freeze_grad()
         
+        inference_acc = []
+        training_loss = []
+        
         # Local training
         for client_id in client_id_list_this_round:
-            print("Client {} training... ".format(client_id), end="")
+            if args.verbose:
+                print("Client {} training... ".format(client_id), end="")
             # Training process
             my_training_dataset = clients_training_dataset[client_id]
             my_testing_dataset = clients_testing_dataset[client_id]
@@ -111,6 +117,7 @@ if __name__ == "__main__":
             # Testing the global_model to the local data
             acc, cfmtx = test(global_model, my_testing_dataset, device=local_model.get_device())
             local_acc_afag_record[client_id].append(acc)
+            inference_acc.append(acc)
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             loss_fn = torch.nn.CrossEntropyLoss()
@@ -124,11 +131,13 @@ if __name__ == "__main__":
             
             clients_gradLs[client_id] = clients_gradLs[client_id].to(origin_device)
             local_loss_record[client_id].append(np.mean(epoch_loss))
+            training_loss.append(local_loss_record[client_id][-1])
             
             # Testing the local_model to its own data
             acc, cfmtx = test(local_model, my_testing_dataset)
             local_acc_bfag_record[client_id].append(acc)
-            print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
+            if args.verbose:
+                print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, acc {acc:>.3f}")
             aver_model = fmodule._model_sum([aver_model, impact_factors[client_id] * local_model])
             
         print("# Server aggregating... ", end="")
@@ -141,12 +150,20 @@ if __name__ == "__main__":
         global_cfmtx_record.append(cfmtx)
         print(f"Done! Avg. acc {acc:>.3f}")
 
+        max_acc = max(max_acc, acc)
+        if args.wandb:
+            wandb.log({
+                    "Mean inference accuracy": np.mean(inference_acc),
+                    "Mean training loss": np.mean(training_loss),
+                    "Global accuracy": acc,
+                    "Max accuracy": max_acc
+                })
         
-    if not Path(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn").exists():
-        os.makedirs(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn")
+    if not Path(f"records/{args.idx_folder}/E{epochs}/R{args.round}/feddyn").exists():
+        os.makedirs(f"records/{args.idx_folder}/E{epochs}/R{args.round}/feddyn")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/feddyn/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/feddyn/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/feddyn/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/feddyn/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     
