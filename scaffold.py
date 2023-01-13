@@ -144,11 +144,11 @@ if __name__ == "__main__":
         print(f"Done! Avg. acc {acc:>.3f}")
 
         
-    if not Path(f"records/{args.exp_folder}/E{epochs}/scaffold").exists():
-        os.makedirs(f"records/{args.exp_folder}/E{epochs}/scaffold")
+    if not Path(f"records/{args.exp_folder}/E{epochs}/R{args.round}/scaffold").exists():
+        os.makedirs(f"records/{args.exp_folder}/E{epochs}/R{args.round}/scaffold")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/scaffold/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     

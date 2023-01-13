@@ -142,11 +142,11 @@ if __name__ == "__main__":
         print(f"Done! Avg. acc {acc:>.3f}")
 
         
-    if not Path(f"records/{args.exp_folder}/E{epochs}/feddyn").exists():
-        os.makedirs(f"records/{args.exp_folder}/E{epochs}/feddyn")
+    if not Path(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn").exists():
+        os.makedirs(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn")
     
-    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/feddyn/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/feddyn/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/feddyn/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/feddyn/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"records/{args.exp_folder}/E{epochs}/R{args.round}/feddyn/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     
