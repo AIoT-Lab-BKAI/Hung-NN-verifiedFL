@@ -55,9 +55,9 @@ if __name__ == "__main__":
         acc, _ = test(global_model, global_testing_dataset)
         print(f"Done! Avg. acc {acc:>.3f}")
         
-    if not Path(f"records/{args.idx_folder}/singleset").exists():
-        os.makedirs(f"records/{args.idx_folder}/singleset")
+    if not Path(f"{args.log_folder}/{args.idx_folder}/singleset").exists():
+        os.makedirs(f"{args.log_folder}/{args.idx_folder}/singleset")
     
     results['fin_acc'] = acc
-    json.dump(results, open(f"records/{args.idx_folder}/singleset/results.json", "w"),cls=NumpyEncoder)
+    json.dump(results, open(f"{args.log_folder}/{args.idx_folder}/singleset/results.json", "w"),cls=NumpyEncoder)
     

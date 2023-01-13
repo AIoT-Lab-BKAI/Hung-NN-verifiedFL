@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 import wandb
- 
+from pathlib import Path
 
 def set_seed(seed):
     random.seed(1+seed)
@@ -26,7 +26,7 @@ def read_arguments(algorithm):
     parser.add_argument("--dataset", type=str, default="mnist")
     parser.add_argument("--data_folder", type=str, default="./data")
     parser.add_argument("--idx_folder", type=str, default="./jsons/dataset_idx/mnist/dirichlet/dir_0.1_sparse")
-    
+    parser.add_argument("--log_folder", type=str, default="./records")
     args = parser.parse_args()
     set_seed(args.seed)
     

@@ -129,11 +129,11 @@ if __name__ == "__main__":
                     "Max accuracy": max_acc
                 })
         
-    if not Path(f"records/{args.idx_folder}/E{epochs}/R{args.round}/fednova").exists():
-        os.makedirs(f"records/{args.idx_folder}/E{epochs}/R{args.round}/fednova")
+    if not Path(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fednova").exists():
+        os.makedirs(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fednova")
     
-    json.dump(local_loss_record,        open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/fednova/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/fednova/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/fednova/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"records/{args.idx_folder}/E{epochs}/R{args.round}/fednova/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    json.dump(local_loss_record,        open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fednova/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fednova/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fednova/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fednova/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     
