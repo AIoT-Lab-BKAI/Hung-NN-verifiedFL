@@ -1,15 +1,19 @@
-from torch.utils.data import DataLoader
-from utils.dataloader import CustomDataset
-from torchvision import datasets, transforms
-from utils.base_model import NeuralNetwork
-import torch, argparse, json
+from utils.train_smt import test, NumpyEncoder
+from utils.reader import read_jsons
+from utils.parser import read_arguments
 
+from pathlib import Path
+from torch.utils.data import DataLoader
+from utils.FIM2 import MLPv2
+from utils.FIM3 import MLPv3
+from utils import fmodule
+import torch, json, os, numpy as np, copy, random
+import torch.nn.functional as F
+import wandb
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
 def train(dataloader, model, loss_fn, optimizer):
-    size = len(dataloader.dataset)
     model.train()
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
@@ -22,67 +26,38 @@ def train(dataloader, model, loss_fn, optimizer):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
-        if batch % 10 == 0:
-            loss, current = loss.item(), batch * len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
             
-            
-def test(dataloader, model, loss_fn):
-    size = len(dataloader.dataset)
-    num_batches = len(dataloader)
-    model.eval()
-    test_loss, correct = 0, 0
-    with torch.no_grad():
-        for X, y in dataloader:
-            X, y = X.to(device), y.to(device)
-            pred = model(X)
-            test_loss += loss_fn(pred, y).item()
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-    test_loss /= num_batches
-    correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
-    
     
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=512)
-    parser.add_argument("--batch_size", type=int, default=4)
-    args = parser.parse_args()
+    args = read_arguments(algorithm=os.path.basename(__file__).split('.py')[0])
+    print(args)
     batch_size = args.batch_size
     epochs = args.epochs
     
-    training_data = datasets.MNIST(
-        root="./data",
-        train=True,
-        download=False,
-        transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-    )
+    _, _, _, global_testing_dataset, singleset = read_jsons(args.idx_folder, args.data_folder, args.dataset)
     
-    testing_data = datasets.MNIST(
-        root="data",
-        train=False,
-        download=False,
-        transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-    )
+    if args.dataset == "mnist":
+        global_model = MLPv2().to(device)
+    elif args.dataset == "cifar10":
+        global_model = MLPv3().to(device)
+    else:
+        raise NotImplementedError
     
-    client_id_list = [0,1,2,3,4]
-    json_data = []
-    for client_id in client_id_list: 
-        json_data += json.load(open(f"./jsons/client{client_id}.json", 'r')) 
+    results = {}
     
-    print(json_data)
-    clients_dataset = CustomDataset(training_data, json_data)
-    train_dataloader = DataLoader(clients_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
-    test_dataloader = DataLoader(testing_data, batch_size=32, shuffle=False, drop_last=False)
-
-    model = NeuralNetwork().cuda()
-    
+    train_dataloader = DataLoader(singleset, batch_size=batch_size, shuffle=True, drop_last=False)
     loss_fn = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.SGD(global_model.parameters(), lr=1e-3)
     
-    for t in range(epochs):
-        print(f"Epoch {t+1}\n-------------------------------")
-        train(train_dataloader, model, loss_fn, optimizer)
-        test(test_dataloader, model, loss_fn)
-    print("Done!")
+    for t in range(500):
+        print(f"Epoch {t+1} ...", end="")
+        train(train_dataloader, global_model, loss_fn, optimizer)
+        acc, _ = test(global_model, global_testing_dataset)
+        print(f"Done! Avg. acc {acc:>.3f}")
+        
+    if not Path(f"records/{args.idx_folder}/singleset").exists():
+        os.makedirs(f"records/{args.idx_folder}/singleset")
+    
+    results['fin_acc'] = acc
+    json.dump(results, open(f"records/{args.idx_folder}/singleset/results.json", "w"),cls=NumpyEncoder)
+    
