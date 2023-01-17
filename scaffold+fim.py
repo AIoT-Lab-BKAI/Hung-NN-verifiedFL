@@ -4,8 +4,8 @@ from utils.parser import read_arguments
 
 from pathlib import Path
 from torch.utils.data import DataLoader
-from utils.FIM2 import MLPv2
-from utils.FIM3 import MLPv3
+from utils.FIM2 import MLP2, FIM2_step
+from utils.FIM3 import MLP3, FIM3_step
 from utils import fmodule
 import torch, json, os, numpy as np, copy, random
 import wandb
@@ -50,9 +50,11 @@ if __name__ == "__main__":
     client_id_list = [i for i in range(num_client)]
     
     if args.dataset == "mnist":
-        global_model = MLPv2().to(devices[0])
+        global_model = MLP2().to(devices[0])
+        fim_step = FIM2_step
     elif args.dataset == "cifar10":
-        global_model = MLPv3().to(devices[0])
+        global_model = MLP3().to(devices[0])
+        fim_step = FIM3_step
     else:
         raise NotImplementedError
     
@@ -161,12 +163,24 @@ if __name__ == "__main__":
                     "Global accuracy": acc,
                     "Max accuracy": max_acc
                 })
-        
-    if not Path(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold").exists():
-        os.makedirs(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold")
     
-    json.dump(local_loss_record,        open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold/local_loss_record.json", "w"),         cls=NumpyEncoder)
-    json.dump(local_acc_bfag_record,    open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(local_acc_afag_record,    open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
-    json.dump(global_cfmtx_record,      open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
+    global_model = fim_step(global_model, clients_training_dataset, client_id_list, eta=1, device=devices[0])
+    print("# Server testing... ", end="")
+    acc, cfmtx = test(global_model, global_testing_dataset)
+    global_cfmtx_record.append(cfmtx)
+    print(f"Done! Avg. acc {acc:>.3f}")
+    
+    if args.wandb:
+        wandb.log({
+                "Fim-based accuracy": acc,
+                "Final max accuracy": max_acc
+            })
+        
+    if not Path(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold+fim").exists():
+        os.makedirs(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold+fim")
+    
+    json.dump(local_loss_record,        open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold+fim/local_loss_record.json", "w"),         cls=NumpyEncoder)
+    json.dump(local_acc_bfag_record,    open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold+fim/local_acc_bfag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(local_acc_afag_record,    open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold+fim/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
+    json.dump(global_cfmtx_record,      open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/scaffold+fim/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     
