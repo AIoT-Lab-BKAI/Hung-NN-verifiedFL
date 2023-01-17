@@ -128,11 +128,12 @@ if __name__ == "__main__":
             
             train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
             loss_fn = torch.nn.CrossEntropyLoss()
-            optimizer = SAM(optimizer, local_model, eta=args.learning_rate)
+            optimizer = torch.optim.SGD(local_model.parameters(), lr=args.learning_rate)
+            minimizer = SAM(optimizer, local_model)
             
             epoch_loss = []
             for t in range(epochs):
-                epoch_loss.append(np.mean(train(train_dataloader, local_model, loss_fn, optimizer)))
+                epoch_loss.append(np.mean(train(train_dataloader, local_model, minimizer, loss_fn)))
             local_loss_record[client_id].append(np.mean(epoch_loss))
             training_loss.append(local_loss_record[client_id][-1])
             
