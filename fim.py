@@ -48,6 +48,7 @@ if __name__ == "__main__":
     num_client, clients_training_dataset, clients_testing_dataset, global_testing_dataset, singleset = read_jsons(args.idx_folder, args.data_folder, args.dataset)
     client_id_list = [i for i in range(num_client)]
     total_sample = np.sum([len(dataset) for dataset in clients_training_dataset])
+    results = {}
     
     if args.dataset == "mnist":
         global_model = MLP2().to(device)
@@ -58,54 +59,21 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError
     
-    print("============ Start ==============")
-    # client_models = []
-    impact_factors = {client_id: len(clients_training_dataset[client_id])/total_sample for client_id in client_id_list}
+    if args.load_model_path is None:
+        raise ValueError("To run fim, load_model_path must not be None")
     
-    centroid = global_model.zeros_like()
+    global_model.load_state_dict(torch.load(args.load_model_path))
     
-    # Local training
-    for client_id in client_id_list:
-        if args.verbose:
-            print(f"Client {client_id:>2d} training... ", end="")
-        # Training process
-        my_training_dataset = clients_training_dataset[client_id]
-        my_testing_dataset = clients_testing_dataset[client_id]
-    
-        local_model = copy.copy(global_model)
-        
-        train_dataloader = DataLoader(my_training_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
-        optimizer = torch.optim.SGD(local_model.parameters(), lr=args.learning_rate)
-        
-        epoch_loss = []
-        for t in range(epochs):
-            epoch_loss.append(np.mean(train(train_dataloader, local_model, optimizer)))
-                
-        # Testing the local_model
-        test_acc, _ = test(local_model, my_testing_dataset)
-        train_acc, _ = test(local_model, my_training_dataset)
-        
-        norm_diff = (local_model - global_model).norm()
-        if args.verbose:
-            print(f"Done! Aver. round loss: {np.mean(epoch_loss):>.3f}, test acc {test_acc:>.3f}, train acc {train_acc:>.3f}, shift length {norm_diff:>.5f}")
-        centroid = fmodule._model_sum([centroid, impact_factors[client_id] * local_model])
-        
-    global_model = fim_step(centroid, clients_training_dataset, client_id_list, eta=1, device=device)
-    
-    results = {}
-    # Testing
-    print("Server testing... ", end="")
+    print("Origin model testing... ", end="")
     acc, cfmtx = test(global_model, global_testing_dataset, device)
     print(f"Done! Avg. acc {acc:>.3f}")
-    results['fim'] = acc
-
-    # print_cfmtx(cfmtx)
-    print("Centroid testing... ", end="")
-    acc, cfmtx = test(centroid, global_testing_dataset, device)
-    print(f"Done! Avg. acc {acc:>.3f}")
-    results['centroid'] = acc
+    results['origin'] = acc
     
-    if not Path(f"{args.log_folder}/{args.idx_folder}/fim").exists():
-        os.makedirs(f"{args.log_folder}/{args.idx_folder}/fim")
-        
-    json.dump(results, open(f"{args.log_folder}/{args.idx_folder}/fim/results.json", "w"))
+    global_model = fim_step(global_model, clients_training_dataset, client_id_list, eta=1, device=device)
+    print("Origin+fim testing... ", end="")
+    acc, cfmtx = test(global_model, global_testing_dataset, device)
+    print(f"Done! Avg. acc {acc:>.3f}")
+    results['+fim'] = acc
+    
+    save_path = os.path.join(*args.load_model_path.split('/')[:-1], "fim.json")
+    json.dump(results, open(save_path, "w"))

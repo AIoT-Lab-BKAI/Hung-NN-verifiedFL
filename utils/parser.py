@@ -23,6 +23,8 @@ def read_arguments(algorithm):
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--wandb", type=int, default=0)
     parser.add_argument("--verbose", type=int, default=0)
+    parser.add_argument("--save_model", type=int, default=0)
+    parser.add_argument("--load_model_path", help="use for fim", type=str, required=False, default=None)
     parser.add_argument("--client_per_round", type=int, default=10)
     parser.add_argument("--dataset", type=str, default="mnist")
     parser.add_argument("--data_folder", type=str, default="./data")

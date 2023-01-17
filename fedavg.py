@@ -130,3 +130,8 @@ if __name__ == "__main__":
     json.dump(local_acc_afag_record,    open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fedavg/local_acc_afag_record.json", "w"),     cls=NumpyEncoder)
     json.dump(global_cfmtx_record,      open(f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fedavg/global_cfmtx_record.json", "w"),       cls=NumpyEncoder)
     
+    if args.save_model:
+        print("Saving model ...", end="")
+        torch.save(global_model.state_dict(), f"{args.log_folder}/{args.idx_folder}/E{epochs}/R{args.round}/fedavg/global_model.pth")
+        print("Done!")
+    

@@ -60,4 +60,7 @@ if __name__ == "__main__":
     
     results['fin_acc'] = acc
     json.dump(results, open(f"{args.log_folder}/{args.idx_folder}/singleset/results.json", "w"),cls=NumpyEncoder)
-    
+    if args.save_model:
+        print("Saving model ...", end="")
+        torch.save(global_model.state_dict(), f"{args.log_folder}/{args.idx_folder}/singleset/global_model.pth")
+        print("Done!")
